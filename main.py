@@ -265,13 +265,13 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 @app.get("/sse")
 async def handle_sse(request: Request):
     """SSE endpoint for MCP communication"""
-    async with SseServerTransport("/messages") as transport:
-        async with transport.connect_sse(request.scope, request.receive, request._send) as streams:
-            await mcp_server.run(
-                streams[0],
-                streams[1],
-                mcp_server.create_initialization_options()
-            )
+    transport = SseServerTransport("/messages")
+    async with transport.connect_sse(request.scope, request.receive, request._send) as streams:
+        await mcp_server.run(
+            streams[0],
+            streams[1],
+            mcp_server.create_initialization_options()
+        )
 
 
 @app.post("/messages")
