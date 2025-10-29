@@ -42,10 +42,5 @@ services:
   routes:
   - path: /
 
-# Database (Managed PostgreSQL)
-databases:
-- name: emperion-kb-db
-  engine: PG
-  version: "16"
-  size: db-s-1vcpu-1gb  # $15/month (or use free credits)
-  production: false  # Set true for prod
+# Note: Using external Supabase PostgreSQL (not DigitalOcean Managed Database)
+# DATABASE_URL is provided via encrypted environment variable
