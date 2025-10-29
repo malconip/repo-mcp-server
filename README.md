@@ -5,7 +5,7 @@
 [![MCP](https://img.shields.io/badge/MCP-1.1-orange.svg)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**AI-powered code intelligence system** that bridges your local repositories with Claude Desktop through the Model Context Protocol (MCP). Store, search, and analyze structured knowledge about your codebase to get better AI assistance.
+**AI-powered code intelligence system** that bridges your local repositories with Claude Desktop through the Model Context Protocol (MCP). Store, search, and analyze structured knowledge about your codebase.
 
 ---
 
@@ -18,7 +18,7 @@ A **remote MCP server** that:
 3. 🧠 **Analyzes** relationships between files and components
 4. 🤝 **Integrates** seamlessly with Claude Desktop
 
-### The Workflow
+### The Architecture
 
 ```
 ┌──────────────────┐         ┌─────────────────────┐
@@ -29,22 +29,22 @@ A **remote MCP server** that:
          │ SSE/Remote Connection
          ▼
 ┌─────────────────────────────────────────────┐
-│     DigitalOcean App Platform               │
-│                                             │
+│     DigitalOcean App Platform ($5/mo)       │
 │  ┌─────────────────────────────────────┐  │
 │  │  Emperion Knowledge Base (FastAPI)   │  │
 │  │  • Index files                        │  │
 │  │  • Search knowledge                   │  │
 │  │  • Analyze dependencies               │  │
 │  └──────────────┬──────────────────────┘  │
-│                 │                           │
-│  ┌──────────────▼──────────────────────┐  │
-│  │  PostgreSQL 16 (Managed Database)    │  │
-│  │  • File index with GIN indexes       │  │
-│  │  • Full-text search                  │  │
-│  │  • Metadata storage (JSONB)          │  │
-│  └─────────────────────────────────────┘  │
-└─────────────────────────────────────────────┘
+└─────────────────┼────────────────────────────┘
+                  │
+┌─────────────────▼────────────────────────┐
+│     Supabase PostgreSQL (FREE!)          │
+│  • 500 MB database storage               │
+│  • SSL/TLS encryption                    │
+│  • Automatic backups                     │
+│  • Connection pooling                    │
+└──────────────────────────────────────────┘
 ```
 
 ---
@@ -88,6 +88,7 @@ A **remote MCP server** that:
 
 ### Prerequisites
 
+- **Supabase account** ([Free PostgreSQL](https://supabase.com)) - **Required**
 - DigitalOcean account ([Get $200 free credits](https://try.digitalocean.com/))
 - GitHub account
 - Claude Desktop installed
@@ -102,35 +103,63 @@ cd emperion-knowledge-base
 # Copy environment template
 cp .env.example .env
 
-# Edit .env with your database credentials
+# Edit .env with your Supabase credentials
 nano .env
 ```
 
-### 2. Deploy to DigitalOcean
+### 2. Setup Supabase Database (2 minutes)
 
-Follow the detailed [**DEPLOYMENT_GUIDE.md**](DEPLOYMENT_GUIDE.md) for step-by-step instructions.
+Follow the detailed [**SUPABASE_SETUP.md**](SUPABASE_SETUP.md) guide.
 
-**TL;DR:**
-1. Create Managed PostgreSQL database
-2. Push code to GitHub
-3. Deploy via App Platform
-4. Configure environment variables
-5. Connect Claude Desktop
+**Quick version:**
 
-### 3. Test Locally (Optional)
+1. Create project at https://supabase.com/dashboard
+2. Get connection string from: Settings → Database → Connection String → URI
+3. Copy the PostgreSQL connection string:
+   ```
+   postgresql://postgres.xxx:[YOUR-PASSWORD]@db.xxx.supabase.co:5432/postgres
+   ```
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+### 3. Deploy to DigitalOcean
 
-# Set DATABASE_URL in .env
-export $(cat .env | xargs)
+1. Push code to GitHub
+2. Go to https://cloud.digitalocean.com/apps
+3. Create App → Select your GitHub repo
+4. Add **encrypted** environment variables:
+   - `DATABASE_URL` - Your Supabase connection string
+   - `MCP_SECRET_KEY` - Generate with: `openssl rand -hex 32`
+   - `LOG_LEVEL` - `INFO`
+   - `ALLOWED_ORIGINS` - `https://claude.ai`
+5. Deploy!
 
-# Run server
-python main.py
+### 4. Connect Claude Desktop
+
+Edit: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/your/repos"
+      ]
+    },
+    "emperion-knowledge": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-remote",
+        "https://your-app.ondigitalocean.app/sse"
+      ]
+    }
+  }
+}
 ```
 
-Server runs on: `http://localhost:8000`
+Restart Claude Desktop (Cmd+Q and reopen).
 
 ---
 
@@ -177,17 +206,18 @@ Returns:
 
 ```
 emperion-knowledge-base/
-├── main.py                 # FastAPI app with SSE endpoint
-├── database.py             # SQLAlchemy database layer
-├── models.py               # Pydantic models
-├── config.py               # Configuration management
-├── requirements.txt        # Python dependencies
-├── Procfile                # DigitalOcean runtime config
-├── app.yaml                # App Platform specification
-├── .env.example            # Environment template
-├── DEPLOYMENT_GUIDE.md     # Detailed deployment steps
-├── README.md               # This file
-└── LICENSE                 # MIT License
+├── main.py                    # FastAPI app with SSE endpoint
+├── database.py                # SQLAlchemy database layer
+├── models.py                  # Pydantic models
+├── config.py                  # Configuration management
+├── requirements.txt           # Python dependencies
+├── Procfile                   # DigitalOcean runtime config
+├── app.yaml                   # App Platform specification
+├── .env.example               # Environment template
+├── SUPABASE_SETUP.md          # Supabase setup guide
+├── SUPABASE_QUICK_GUIDE.md    # Quick visual guide
+├── README.md                  # This file
+└── LICENSE                    # MIT License
 ```
 
 ---
@@ -196,41 +226,22 @@ emperion-knowledge-base/
 
 ### Environment Variables
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | ✅ Yes | - |
-| `MCP_SECRET_KEY` | Secret key for security | ✅ Yes | - |
-| `ALLOWED_ORIGINS` | CORS origins (comma-separated) | No | `*` |
-| `LOG_LEVEL` | Logging level | No | `INFO` |
-| `RATE_LIMIT_PER_HOUR` | API rate limit | No | `100` |
-| `MAX_FILE_SIZE_MB` | Max file size to index | No | `10` |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | Supabase PostgreSQL connection string | ✅ Yes |
+| `MCP_SECRET_KEY` | Secret key for security | ✅ Yes |
+| `ALLOWED_ORIGINS` | CORS origins (comma-separated) | No (default: `https://claude.ai`) |
+| `LOG_LEVEL` | Logging level | No (default: `INFO`) |
+| `RATE_LIMIT_PER_HOUR` | API rate limit | No (default: `100`) |
+| `MAX_FILE_SIZE_MB` | Max file size to index | No (default: `10`) |
 
-### Claude Desktop Config
+### Supabase Connection String Format
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/path/to/your/repos"
-      ]
-    },
-    "emperion-knowledge": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-remote",
-        "https://your-app.ondigitalocean.app/sse"
-      ]
-    }
-  }
-}
 ```
+postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
+```
+
+Get from: Supabase Dashboard → Settings → Database → Connection String
 
 ---
 
@@ -273,47 +284,87 @@ emperion-knowledge-base/
 
 ---
 
-## 💰 Cost Estimate
+## 💰 Cost Breakdown
 
-**Using DigitalOcean's $200 free credits:**
+### Total: $5/month
 
-| Resource | Cost/Month | Free Months |
-|----------|------------|-------------|
-| PostgreSQL (Basic 1GB) | $15 | 13 months |
-| App Platform (Basic) | $5 | 40 months |
-| **Total** | **$20** | **10 months** |
+| Resource | Cost/Month | What You Get |
+|----------|------------|--------------|
+| **Supabase PostgreSQL** | **$0** | 500 MB storage, SSL, backups, pooling |
+| **DigitalOcean App Platform** | **$5** | Python app hosting, SSL certificate |
+| **TOTAL** | **$5** | Complete AI code intelligence! 🎉 |
 
-After credits: $20/month or downgrade to free tier.
+### Free Tier Limits (Supabase)
+
+- 500 MB database storage
+- Unlimited API requests
+- 2 GB bandwidth
+- 50 MB file storage
+- 7 days backup retention
+
+**Enough for ~50,000 indexed files!**
 
 ---
 
 ## 🧪 Development
 
-### Run Tests
+### Run Locally
 
 ```bash
-pytest tests/
+# Install dependencies
+pip install -r requirements.txt
+
+# Set environment variables
+export DATABASE_URL="your-supabase-connection-string"
+export MCP_SECRET_KEY="your-secret-key"
+
+# Run server
+python main.py
+
+# Server runs on: http://localhost:8000
 ```
 
-### Local Development
+### Test Endpoints
 
 ```bash
-# Install dev dependencies
-pip install -r requirements-dev.txt
+# Health check
+curl http://localhost:8000/health
 
-# Run with auto-reload
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Get stats
+curl http://localhost:8000/
 ```
 
-### Database Migrations
+---
 
+## 🆘 Troubleshooting
+
+### "Connection refused" or "timeout"
+
+**Check:**
+1. ✅ Is your Supabase project status "Active"?
+2. ✅ Did you replace `[YOUR-PASSWORD]` in the connection string?
+3. ✅ Is the connection string in the correct format?
+
+**Test connection:**
 ```bash
-# Create migration
-alembic revision --autogenerate -m "Add new feature"
-
-# Apply migrations
-alembic upgrade head
+psql "postgresql://postgres:password@db.xxx.supabase.co:5432/postgres"
 ```
+
+### "Password authentication failed"
+
+**Solution:**
+1. Go to Supabase → Settings → Database
+2. Click "Reset Database Password"
+3. Update DATABASE_URL with new password
+
+### "Health check failed" in DigitalOcean
+
+**Check logs:**
+```
+Apps → Your App → Runtime Logs
+```
+
+Look for database connection errors.
 
 ---
 
@@ -337,17 +388,27 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🙏 Acknowledgments
 
 - [Anthropic MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+- [Supabase](https://supabase.com/) - PostgreSQL database platform
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
 - [DigitalOcean](https://www.digitalocean.com/) - Cloud infrastructure
 
 ---
 
+## 📚 Documentation
+
+- **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** - Complete Supabase setup guide
+- **[SUPABASE_QUICK_GUIDE.md](SUPABASE_QUICK_GUIDE.md)** - Visual quick reference
+- **[CHECKLIST.md](CHECKLIST.md)** - Pre-deployment checklist
+
+---
+
 ## 📞 Support
 
-- 📧 Email: your.email@example.com
 - 🐛 Issues: [GitHub Issues](https://github.com/YOUR_USERNAME/emperion-knowledge-base/issues)
 - 💬 Discussions: [GitHub Discussions](https://github.com/YOUR_USERNAME/emperion-knowledge-base/discussions)
 
 ---
 
 **Built with ❤️ by Malcon Albuquerque for the Emperion Project**
+
+**Powered by:** Supabase (PostgreSQL) + DigitalOcean (Hosting) + Anthropic MCP
