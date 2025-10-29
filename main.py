@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import Response
 
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize MCP server
 mcp_server = Server("emperion-knowledge-base")
+
+# Create SSE transport - MUST be created once at module level
+sse_transport = SseServerTransport("/messages/")
 
 
 # ==================== LIFESPAN ====================
@@ -45,23 +49,6 @@ async def lifespan(app: FastAPI):
     logger.info("✅ MCP Server ready on SSE endpoint /sse")
     yield
     logger.info("👋 Shutting down MCP Server...")
-
-
-# ==================== FASTAPI APP ====================
-
-app = FastAPI(
-    title="Emperion Knowledge Base MCP Server",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # ==================== MCP TOOLS DEFINITION ====================
@@ -260,24 +247,47 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
         return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 
-# ==================== SSE ENDPOINT ====================
+# ==================== FASTAPI APP ====================
+
+app = FastAPI(
+    title="Emperion Knowledge Base MCP Server",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ==================== SSE ENDPOINTS ====================
 
 @app.get("/sse")
-async def handle_sse(request: Request):
+async def handle_sse(request: Request) -> Response:
     """SSE endpoint for MCP communication"""
-    transport = SseServerTransport("/messages")
-    async with transport.connect_sse(request.scope, request.receive, request._send) as streams:
+    logger.info("SSE connection established")
+    
+    async with sse_transport.connect_sse(
+        request.scope,
+        request.receive,
+        request._send
+    ) as streams:
         await mcp_server.run(
             streams[0],
             streams[1],
             mcp_server.create_initialization_options()
         )
+    
+    # Must return Response to avoid NoneType error on disconnect
+    return Response()
 
 
-@app.post("/messages")
-async def handle_messages(request: Request):
-    """Handle MCP messages"""
-    return JSONResponse({"status": "ok"})
+# Mount the POST message handler as ASGI app
+app.mount("/messages/", sse_transport.handle_post_message)
 
 
 # ==================== REGULAR ENDPOINTS ====================
@@ -300,7 +310,7 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "sse": "/sse",
-            "messages": "/messages",
+            "messages": "/messages/",
             "health": "/health"
         }
     }
