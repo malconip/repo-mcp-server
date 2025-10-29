@@ -2,18 +2,20 @@
 mcp>=1.1.0
 
 # Web framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-sse-starlette==1.8.2
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+sse-starlette>=1.8.2
 
 # Database
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+
+# Data validation (MCP requires >= 2.11.0)
+pydantic>=2.11.0
 
 # Utilities
-pydantic==2.5.0
-python-dotenv==1.0.0
+python-dotenv>=1.0.0
 
 # Optional: Vector search (uncomment if needed)
-# sentence-transformers==2.2.2
-# chromadb==0.4.18
+# sentence-transformers>=2.2.2
+# chromadb>=0.4.18
