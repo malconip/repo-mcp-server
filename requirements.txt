@@ -1,17 +1,17 @@
 # Core MCP dependencies - FastMCP
 fastmcp>=2.0.0
 
-# Web framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
+# Web framework (versões compatíveis com FastMCP)
+fastapi>=0.115.12
+uvicorn[standard]>=0.30.0
 
 # Database
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
 
-# Utilities
-pydantic==2.5.0
-python-dotenv==1.0.0
+# Utilities (versões compatíveis com FastMCP)
+pydantic>=2.11.7
+python-dotenv>=1.1.0
 
 # Optional: Vector search (uncomment if needed)
 # sentence-transformers==2.2.2
