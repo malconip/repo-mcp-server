@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # ==================== FASTMCP SERVER ====================
 
-# Create FastMCP server WITHOUT deprecated parameters
+# Create FastMCP server (simple - no deprecated params)
 mcp = FastMCP("emperion-knowledge-base")
 
 
@@ -359,29 +359,26 @@ def analyze_dependencies(path: str) -> dict:
         return {"error": str(e), "path": path}
 
 
-# ==================== FASTAPI APP WITH CUSTOM ENDPOINTS ====================
+# ==================== FASTAPI APP ====================
 
-# Create FastAPI app with custom lifespan
+# Simple lifespan - just initialize database
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    """Lifespan for FastAPI app - initialize database on startup"""
+    """Initialize database on startup"""
     logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
     try:
         db.init_db()
         logger.info("✅ Database initialized")
         
-        # Validate configuration
         if config.validate():
             logger.info("✅ Configuration validated")
         else:
-            logger.warning("⚠️  Configuration has warnings (see above)")
+            logger.warning("⚠️  Configuration has warnings")
         
-        # Initialize MCP session manager
-        async with mcp.session_manager.run():
-            logger.info("✅ MCP Server ready on Streamable HTTP")
-            yield  # Server runs here
+        logger.info("✅ MCP Server ready on Streamable HTTP")
+        yield
         
-        logger.info("👋 Shutting down MCP Server...")
+        logger.info("👋 Shutting down...")
     except Exception as e:
         logger.error(f"❌ Startup failed: {e}")
         raise
@@ -393,8 +390,8 @@ app = FastAPI(
     lifespan=app_lifespan
 )
 
-# Mount MCP Streamable HTTP endpoint at /mcp
-app.mount("/mcp", mcp.streamable_http_app())
+# Mount MCP endpoint using NEW API (http_app instead of streamable_http_app)
+app.mount("/mcp", mcp.http_app())
 
 # Health check endpoint
 @app.get("/health")
