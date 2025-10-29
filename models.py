@@ -3,7 +3,7 @@ Data models for Emperion Knowledge Base
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 
@@ -39,6 +39,37 @@ class Technology(str, Enum):
 class FileKnowledge(BaseModel):
     """Main knowledge structure for a file"""
     
+    # Pydantic V2: Use ConfigDict instead of Config class
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "path": "/emperion/azure-iac/main.bicep",
+                "repo": "azure-iac",
+                "file_type": "bicep",
+                "technology": "infrastructure-as-code",
+                "summary": "Main infrastructure definition for Azure resources",
+                "key_elements": [
+                    "storageAccount",
+                    "appServicePlan",
+                    "keyVault"
+                ],
+                "dependencies": [
+                    "/emperion/azure-iac/modules/storage.bicep",
+                    "/emperion/azure-iac/modules/keyvault.bicep"
+                ],
+                "dependents": [],
+                "tags": ["azure", "infrastructure", "production"],
+                "content_hash": "abc123def456",
+                "indexed_at": "2025-10-29T18:00:00Z",
+                "file_metadata": {
+                    "line_count": 150,
+                    "complexity": "medium",
+                    "last_modified": "2025-10-28"
+                }
+            }
+        }
+    )
+    
     # Identity
     path: str = Field(..., description="Full path to the file")
     repo: str = Field(..., description="Repository name")
@@ -72,43 +103,13 @@ class FileKnowledge(BaseModel):
         default_factory=dict,
         description="Extra metadata (line_count, complexity, etc)"
     )
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "path": "/emperion/azure-iac/main.bicep",
-                "repo": "azure-iac",
-                "file_type": "bicep",
-                "technology": "infrastructure-as-code",
-                "summary": "Main infrastructure definition for Azure resources",
-                "key_elements": [
-                    "storageAccount",
-                    "appServicePlan",
-                    "keyVault"
-                ],
-                "dependencies": [
-                    "/emperion/azure-iac/modules/storage.bicep",
-                    "/emperion/azure-iac/modules/keyvault.bicep"
-                ],
-                "dependents": [],
-                "tags": ["azure", "infrastructure", "production"],
-                "content_hash": "abc123def456",
-                "indexed_at": "2025-10-29T18:00:00Z",
-                "file_metadata": {
-                    "line_count": 150,
-                    "complexity": "medium",
-                    "last_modified": "2025-10-28"
-                }
-            }
-        }
 
 
 class BatchIndexRequest(BaseModel):
     """Request to index multiple files at once"""
-    files: List[FileKnowledge] = Field(..., description="List of files to index")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "files": [
                     {
@@ -127,19 +128,16 @@ class BatchIndexRequest(BaseModel):
                 ]
             }
         }
+    )
+    
+    files: List[FileKnowledge] = Field(..., description="List of files to index")
 
 
 class SearchQuery(BaseModel):
     """Search query parameters"""
-    query: str = Field(..., description="Search query")
-    file_types: Optional[List[FileType]] = Field(None, description="Filter by file types")
-    technologies: Optional[List[Technology]] = Field(None, description="Filter by technology")
-    repos: Optional[List[str]] = Field(None, description="Filter by repositories")
-    tags: Optional[List[str]] = Field(None, description="Filter by tags")
-    limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "query": "azure storage configuration",
                 "file_types": ["bicep"],
@@ -149,6 +147,14 @@ class SearchQuery(BaseModel):
                 "limit": 10
             }
         }
+    )
+    
+    query: str = Field(..., description="Search query")
+    file_types: Optional[List[FileType]] = Field(None, description="Filter by file types")
+    technologies: Optional[List[Technology]] = Field(None, description="Filter by technology")
+    repos: Optional[List[str]] = Field(None, description="Filter by repositories")
+    tags: Optional[List[str]] = Field(None, description="Filter by tags")
+    limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
 
 
 class SearchResult(BaseModel):
@@ -163,13 +169,9 @@ class SearchResult(BaseModel):
 
 class DependencyGraph(BaseModel):
     """Dependency graph for a component"""
-    root: str = Field(..., description="Root file path")
-    dependencies: List[str] = Field(..., description="Direct dependencies")
-    dependents: List[str] = Field(..., description="Direct dependents")
-    depth: int = Field(..., description="Depth of dependency tree")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "root": "/emperion/IntakeAPI/Services/AuthService.cs",
                 "dependencies": [
@@ -182,6 +184,12 @@ class DependencyGraph(BaseModel):
                 "depth": 2
             }
         }
+    )
+    
+    root: str = Field(..., description="Root file path")
+    dependencies: List[str] = Field(..., description="Direct dependencies")
+    dependents: List[str] = Field(..., description="Direct dependents")
+    depth: int = Field(..., description="Depth of dependency tree")
 
 
 class IndexStats(BaseModel):

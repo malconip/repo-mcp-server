@@ -26,34 +26,8 @@ logger = logging.getLogger(__name__)
 
 # ==================== FASTMCP SERVER ====================
 
-# Create FastMCP server with stateless HTTP for cloud deployment
-mcp = FastMCP(
-    "emperion-knowledge-base",
-    dependencies=["fastapi", "sqlalchemy", "psycopg2-binary", "pydantic"],
-    stateless_http=True  # CRITICAL for DigitalOcean/Cloud deployment
-)
-
-# Initialize database on startup
-@mcp.lifespan()
-async def lifespan():
-    """Initialize database on startup"""
-    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
-    try:
-        db.init_db()
-        logger.info("✅ Database initialized")
-        
-        # Validate configuration
-        if config.validate():
-            logger.info("✅ Configuration validated")
-        else:
-            logger.warning("⚠️  Configuration has warnings (see above)")
-        
-        yield  # Server runs here
-        
-        logger.info("👋 Shutting down MCP Server...")
-    except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
-        raise
+# Create FastMCP server WITHOUT deprecated parameters
+mcp = FastMCP("emperion-knowledge-base")
 
 
 # ==================== MCP TOOLS ====================
@@ -387,12 +361,30 @@ def analyze_dependencies(path: str) -> dict:
 
 # ==================== FASTAPI APP WITH CUSTOM ENDPOINTS ====================
 
-# Create FastAPI app with MCP lifespan
+# Create FastAPI app with custom lifespan
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    """Lifespan for FastAPI app"""
-    async with mcp.session_manager.run():
-        yield
+    """Lifespan for FastAPI app - initialize database on startup"""
+    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
+    try:
+        db.init_db()
+        logger.info("✅ Database initialized")
+        
+        # Validate configuration
+        if config.validate():
+            logger.info("✅ Configuration validated")
+        else:
+            logger.warning("⚠️  Configuration has warnings (see above)")
+        
+        # Initialize MCP session manager
+        async with mcp.session_manager.run():
+            logger.info("✅ MCP Server ready on Streamable HTTP")
+            yield  # Server runs here
+        
+        logger.info("👋 Shutting down MCP Server...")
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        raise
 
 app = FastAPI(
     title="Emperion Knowledge Base",
