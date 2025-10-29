@@ -270,19 +270,31 @@ app.add_middleware(
 async def handle_sse(request: Request) -> Response:
     """SSE endpoint for MCP communication"""
     logger.info("SSE connection established")
+    logger.info(f"Request scope: {request.scope.get('type')}")
+    logger.info(f"Request path: {request.scope.get('path')}")
     
-    async with sse_transport.connect_sse(
-        request.scope,
-        request.receive,
-        request._send
-    ) as streams:
-        await mcp_server.run(
-            streams[0],
-            streams[1],
-            mcp_server.create_initialization_options()
-        )
+    try:
+        async with sse_transport.connect_sse(
+            request.scope,
+            request.receive,
+            request._send
+        ) as streams:
+            logger.info("SSE streams created successfully")
+            logger.info(f"Read stream: {streams[0]}")
+            logger.info(f"Write stream: {streams[1]}")
+            
+            await mcp_server.run(
+                streams[0],
+                streams[1],
+                mcp_server.create_initialization_options()
+            )
+            logger.info("MCP server run completed")
+    except Exception as e:
+        logger.error(f"Error in SSE handler: {e}", exc_info=True)
+        raise
     
     # Must return Response to avoid NoneType error on disconnect
+    logger.info("Returning empty Response")
     return Response()
 
 
