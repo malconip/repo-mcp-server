@@ -1,21 +1,18 @@
-# Core MCP dependencies
-mcp>=1.1.0
+# Core MCP dependencies - FastMCP
+fastmcp>=2.0.0
 
 # Web framework
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-sse-starlette>=1.8.2
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
 
 # Database
-psycopg2-binary>=2.9.9
-sqlalchemy>=2.0.23
-
-# Data validation (MCP requires >= 2.11.0)
-pydantic>=2.11.0
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.23
 
 # Utilities
-python-dotenv>=1.0.0
+pydantic==2.5.0
+python-dotenv==1.0.0
 
 # Optional: Vector search (uncomment if needed)
-# sentence-transformers>=2.2.2
-# chromadb>=0.4.18
+# sentence-transformers==2.2.2
+# chromadb==0.4.18

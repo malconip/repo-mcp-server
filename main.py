@@ -13,25 +13,15 @@ Workflow:
 4. Later, Claude queries this server for context when helping with development
 """
 
-import asyncio
 import json
 import logging
-from typing import Any, Sequence
+from typing import Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
-
-from mcp.server import Server
-from mcp.types import (
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel
-)
+from mcp.server.fastmcp import FastMCP
 
 from database import db
 from models import (
@@ -44,8 +34,8 @@ from config import config
 logging.basicConfig(level=getattr(logging, config.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 
-# Initialize MCP server
-mcp_server = Server("emperion-knowledge-base")
+# Initialize FastMCP server
+mcp = FastMCP("emperion-knowledge-base")
 
 
 # ==================== LIFESPAN ====================
@@ -96,499 +86,337 @@ app.add_middleware(
 
 # ==================== MCP TOOLS ====================
 
-@mcp_server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List available tools for knowledge management"""
-    return [
-        # ===== INDEXING TOOLS =====
-        Tool(
-            name="index_file",
-            description=(
-                "Index a single file's structured knowledge. "
-                "Claude should extract key information from files read via filesystem MCP "
-                "and store it here for future reference."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Full path to the file (e.g., /emperion/azure-iac/main.bicep)"
-                    },
-                    "repo": {
-                        "type": "string",
-                        "description": "Repository name (e.g., azure-iac, IntakeAPI)"
-                    },
-                    "file_type": {
-                        "type": "string",
-                        "enum": [ft.value for ft in FileType],
-                        "description": "Type of file"
-                    },
-                    "technology": {
-                        "type": "string",
-                        "enum": [t.value for t in Technology],
-                        "description": "Technology category"
-                    },
-                    "summary": {
-                        "type": "string",
-                        "description": "Brief summary of file purpose (1-2 sentences)"
-                    },
-                    "key_elements": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Important elements (resources, classes, functions, etc.)"
-                    },
-                    "dependencies": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Files this one depends on (full paths)"
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Searchable tags (e.g., azure, production, api)"
-                    },
-                    "content_hash": {
-                        "type": "string",
-                        "description": "Hash of content for change detection"
-                    },
-                    "file_metadata": {
-                        "type": "object",
-                        "description": "Additional metadata (line_count, complexity, etc.)"
-                    }
-                },
-                "required": ["path", "repo", "file_type", "technology", "summary", "content_hash"]
-            }
-        ),
-        
-        Tool(
-            name="index_batch",
-            description="Index multiple files at once for efficiency",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "files": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "path": {"type": "string"},
-                                "repo": {"type": "string"},
-                                "file_type": {"type": "string"},
-                                "technology": {"type": "string"},
-                                "summary": {"type": "string"},
-                                "key_elements": {"type": "array", "items": {"type": "string"}},
-                                "dependencies": {"type": "array", "items": {"type": "string"}},
-                                "tags": {"type": "array", "items": {"type": "string"}},
-                                "content_hash": {"type": "string"},
-                                "file_metadata": {"type": "object"}
-                            },
-                            "required": ["path", "repo", "file_type", "technology", "summary", "content_hash"]
-                        }
-                    }
-                },
-                "required": ["files"]
-            }
-        ),
-        
-        # ===== SEARCH TOOLS =====
-        Tool(
-            name="search_knowledge",
-            description=(
-                "Search for files using semantic/keyword search. "
-                "Searches through summaries, key elements, and tags."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query (e.g., 'azure storage configuration')"
-                    },
-                    "file_types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Filter by file types"
-                    },
-                    "technologies": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Filter by technology categories"
-                    },
-                    "repos": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Filter by repositories"
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Filter by tags"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "Maximum results to return (1-100)"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        
-        Tool(
-            name="get_file_context",
-            description="Get complete context for a specific file by its path",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Full path to the file"
-                    }
-                },
-                "required": ["path"]
-            }
-        ),
-        
-        Tool(
-            name="find_related",
-            description="Find files related to a given file (same repo, similar technology)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the reference file"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "Maximum results"
-                    }
-                },
-                "required": ["path"]
-            }
-        ),
-        
-        Tool(
-            name="search_by_type",
-            description="Get all files of a specific type, optionally filtered by repo",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "file_type": {
-                        "type": "string",
-                        "enum": [ft.value for ft in FileType],
-                        "description": "File type to search for"
-                    },
-                    "repo": {
-                        "type": "string",
-                        "description": "Optional: filter by repository"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "default": 50,
-                        "description": "Maximum results"
-                    }
-                },
-                "required": ["file_type"]
-            }
-        ),
-        
-        # ===== ANALYSIS TOOLS =====
-        Tool(
-            name="get_stats",
-            description="Get statistics about the indexed knowledge base",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
-        ),
-        
-        Tool(
-            name="analyze_dependencies",
-            description="Analyze dependency graph for a specific file",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to analyze"
-                    }
-                },
-                "required": ["path"]
-            }
-        ),
-    ]
-
-
-@mcp_server.call_tool()
-async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-    """Handle tool calls"""
+@mcp.tool()
+def index_file(
+    path: str,
+    repo: str,
+    file_type: str,
+    technology: str,
+    summary: str,
+    content_hash: str,
+    key_elements: list[str] = [],
+    dependencies: list[str] = [],
+    tags: list[str] = [],
+    file_metadata: dict = {}
+) -> str:
+    """
+    Index a single file's structured knowledge.
+    Claude should extract key information from files read via filesystem MCP
+    and store it here for future reference.
     
+    Args:
+        path: Full path to the file (e.g., /emperion/azure-iac/main.bicep)
+        repo: Repository name (e.g., azure-iac, IntakeAPI)
+        file_type: Type of file (bicep, csharp, python, yaml, etc.)
+        technology: Technology category (infrastructure, backend, frontend, etc.)
+        summary: Brief summary of file purpose (1-2 sentences)
+        content_hash: Hash of content for change detection
+        key_elements: Important elements (resources, classes, functions, etc.)
+        dependencies: Files this one depends on (full paths)
+        tags: Searchable tags (e.g., azure, production, api)
+        file_metadata: Additional metadata (line_count, complexity, etc.)
+    """
     try:
-        if name == "index_file":
-            file_knowledge = FileKnowledge(
-                path=arguments["path"],
-                repo=arguments["repo"],
-                file_type=FileType(arguments["file_type"]),
-                technology=Technology(arguments["technology"]),
-                summary=arguments["summary"],
-                key_elements=arguments.get("key_elements", []),
-                dependencies=arguments.get("dependencies", []),
+        file_knowledge = FileKnowledge(
+            path=path,
+            repo=repo,
+            file_type=FileType(file_type),
+            technology=Technology(technology),
+            summary=summary,
+            key_elements=key_elements,
+            dependencies=dependencies,
+            dependents=[],
+            tags=tags,
+            content_hash=content_hash,
+            file_metadata=file_metadata
+        )
+        
+        success = db.index_file(file_knowledge)
+        
+        return json.dumps({
+            "status": "success" if success else "error",
+            "message": f"{'Successfully indexed' if success else 'Failed to index'} {path}",
+            "path": path
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in index_file: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+def index_batch(files: list[dict]) -> str:
+    """
+    Index multiple files at once for efficiency.
+    
+    Args:
+        files: List of file objects with same structure as index_file
+    """
+    try:
+        file_objects = []
+        for file_data in files:
+            file_objects.append(FileKnowledge(
+                path=file_data["path"],
+                repo=file_data["repo"],
+                file_type=FileType(file_data["file_type"]),
+                technology=Technology(file_data["technology"]),
+                summary=file_data["summary"],
+                key_elements=file_data.get("key_elements", []),
+                dependencies=file_data.get("dependencies", []),
                 dependents=[],
-                tags=arguments.get("tags", []),
-                content_hash=arguments["content_hash"],
-                file_metadata=arguments.get("file_metadata", {})
-            )
-            
-            success = db.index_file(file_knowledge)
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success" if success else "error",
-                    "message": f"{'Successfully indexed' if success else 'Failed to index'} {arguments['path']}",
-                    "path": arguments["path"]
-                }, indent=2)
-            )]
+                tags=file_data.get("tags", []),
+                content_hash=file_data["content_hash"],
+                file_metadata=file_data.get("file_metadata", {})
+            ))
         
-        elif name == "index_batch":
-            files = []
-            for file_data in arguments["files"]:
-                files.append(FileKnowledge(
-                    path=file_data["path"],
-                    repo=file_data["repo"],
-                    file_type=FileType(file_data["file_type"]),
-                    technology=Technology(file_data["technology"]),
-                    summary=file_data["summary"],
-                    key_elements=file_data.get("key_elements", []),
-                    dependencies=file_data.get("dependencies", []),
-                    dependents=[],
-                    tags=file_data.get("tags", []),
-                    content_hash=file_data["content_hash"],
-                    file_metadata=file_data.get("file_metadata", {})
-                ))
-            
-            results = db.index_batch(files)
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success",
-                    "results": results,
-                    "message": f"Indexed {results['success']} files, {results['failed']} failed"
-                }, indent=2)
-            )]
+        results = db.index_batch(file_objects)
         
-        elif name == "search_knowledge":
-            query = SearchQuery(
-                query=arguments["query"],
-                file_types=[FileType(ft) for ft in arguments.get("file_types", [])],
-                technologies=[Technology(t) for t in arguments.get("technologies", [])],
-                repos=arguments.get("repos"),
-                tags=arguments.get("tags"),
-                limit=arguments.get("limit", 10)
-            )
-            
-            results = db.search_knowledge(query)
-            
-            formatted = []
-            for result in results:
-                formatted.append({
+        return json.dumps({
+            "status": "success",
+            "results": results,
+            "message": f"Indexed {results['success']} files, {results['failed']} failed"
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in index_batch: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+def search_knowledge(
+    query: str,
+    file_types: list[str] = [],
+    technologies: list[str] = [],
+    repos: list[str] = [],
+    tags: list[str] = [],
+    limit: int = 10
+) -> str:
+    """
+    Search for files using semantic/keyword search.
+    Searches through summaries, key elements, and tags.
+    
+    Args:
+        query: Search query (e.g., 'azure storage configuration')
+        file_types: Filter by file types
+        technologies: Filter by technology categories
+        repos: Filter by repositories
+        tags: Filter by tags
+        limit: Maximum results to return (1-100)
+    """
+    try:
+        search_query = SearchQuery(
+            query=query,
+            file_types=[FileType(ft) for ft in file_types],
+            technologies=[Technology(t) for t in technologies],
+            repos=repos if repos else None,
+            tags=tags if tags else None,
+            limit=min(limit, 100)
+        )
+        
+        results = db.search_knowledge(search_query)
+        
+        formatted = []
+        for result in results:
+            formatted.append({
+                "path": result.path,
+                "repo": result.repo,
+                "file_type": result.file_type,
+                "technology": result.technology,
+                "summary": result.summary,
+                "key_elements": result.key_elements,
+                "tags": result.tags,
+                "dependencies": result.dependencies,
+                "file_metadata": result.file_metadata
+            })
+        
+        return json.dumps({
+            "status": "success",
+            "count": len(formatted),
+            "results": formatted
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in search_knowledge: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+def get_file_context(path: str) -> str:
+    """
+    Get complete context for a specific file by its path.
+    
+    Args:
+        path: Full path to the file
+    """
+    try:
+        result = db.get_file_context(path)
+        
+        if result:
+            return json.dumps({
+                "status": "success",
+                "file": {
                     "path": result.path,
                     "repo": result.repo,
                     "file_type": result.file_type,
                     "technology": result.technology,
                     "summary": result.summary,
                     "key_elements": result.key_elements,
-                    "tags": result.tags,
                     "dependencies": result.dependencies,
+                    "dependents": result.dependents,
+                    "tags": result.tags,
+                    "indexed_at": result.indexed_at.isoformat(),
                     "file_metadata": result.file_metadata
-                })
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success",
-                    "count": len(formatted),
-                    "results": formatted
-                }, indent=2)
-            )]
-        
-        elif name == "get_file_context":
-            result = db.get_file_context(arguments["path"])
-            
-            if result:
-                return [TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "status": "success",
-                        "file": {
-                            "path": result.path,
-                            "repo": result.repo,
-                            "file_type": result.file_type,
-                            "technology": result.technology,
-                            "summary": result.summary,
-                            "key_elements": result.key_elements,
-                            "dependencies": result.dependencies,
-                            "dependents": result.dependents,
-                            "tags": result.tags,
-                            "indexed_at": result.indexed_at.isoformat(),
-                            "file_metadata": result.file_metadata
-                        }
-                    }, indent=2)
-                )]
-            else:
-                return [TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "status": "not_found",
-                        "message": f"File not found: {arguments['path']}"
-                    }, indent=2)
-                )]
-        
-        elif name == "find_related":
-            results = db.find_related(
-                arguments["path"],
-                arguments.get("limit", 10)
-            )
-            
-            formatted = [
-                {
-                    "path": r.path,
-                    "repo": r.repo,
-                    "file_type": r.file_type,
-                    "summary": r.summary,
-                    "tags": r.tags
                 }
-                for r in results
-            ]
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success",
-                    "count": len(formatted),
-                    "related_files": formatted
-                }, indent=2)
-            )]
-        
-        elif name == "search_by_type":
-            results = db.search_by_type(
-                arguments["file_type"],
-                arguments.get("repo"),
-                arguments.get("limit", 50)
-            )
-            
-            formatted = [
-                {
-                    "path": r.path,
-                    "repo": r.repo,
-                    "summary": r.summary,
-                    "tags": r.tags
-                }
-                for r in results
-            ]
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success",
-                    "file_type": arguments["file_type"],
-                    "count": len(formatted),
-                    "files": formatted
-                }, indent=2)
-            )]
-        
-        elif name == "get_stats":
-            stats = db.get_stats()
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success",
-                    "stats": {
-                        "total_files": stats.total_files,
-                        "files_by_type": stats.files_by_type,
-                        "files_by_repo": stats.files_by_repo,
-                        "files_by_technology": stats.files_by_technology,
-                        "last_indexed": stats.last_indexed.isoformat() if stats.last_indexed else None,
-                        "total_dependencies": stats.total_dependencies
-                    }
-                }, indent=2)
-            )]
-        
-        elif name == "analyze_dependencies":
-            deps = db.analyze_dependencies(arguments["path"])
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "success",
-                    "dependency_graph": {
-                        "root": deps.root,
-                        "dependencies": deps.dependencies,
-                        "dependents": deps.dependents,
-                        "depth": deps.depth
-                    }
-                }, indent=2)
-            )]
-        
-        else:
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "status": "error",
-                    "message": f"Unknown tool: {name}"
-                }, indent=2)
-            )]
-    
-    except Exception as e:
-        logger.error(f"Error in tool {name}: {e}")
-        return [TextContent(
-            type="text",
-            text=json.dumps({
-                "status": "error",
-                "message": str(e),
-                "tool": name
             }, indent=2)
-        )]
+        else:
+            return json.dumps({
+                "status": "not_found",
+                "message": f"File not found: {path}"
+            }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in get_file_context: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
 
 
-# ==================== SSE ENDPOINT ====================
-
-@app.get("/sse")
-async def handle_sse(request: Request):
-    """SSE endpoint for MCP communication"""
+@mcp.tool()
+def find_related(path: str, limit: int = 10) -> str:
+    """
+    Find files related to a given file (same repo, similar technology).
     
-    async def event_generator():
-        """Generate SSE events for MCP protocol"""
-        from mcp.server.sse import SseServerTransport
+    Args:
+        path: Path to the reference file
+        limit: Maximum results
+    """
+    try:
+        results = db.find_related(path, limit)
         
-        # Create SSE transport
-        async with SseServerTransport("/message") as transport:
-            # Connect transport to MCP server
-            async with transport.connect_sse(
-                mcp_server,
-                lambda: logger.info("MCP client connected")
-            ) as streams:
-                # Run the server
-                await mcp_server.run(
-                    streams[0],
-                    streams[1],
-                    mcp_server.create_initialization_options()
-                )
+        formatted = [
+            {
+                "path": r.path,
+                "repo": r.repo,
+                "file_type": r.file_type,
+                "summary": r.summary,
+                "tags": r.tags
+            }
+            for r in results
+        ]
+        
+        return json.dumps({
+            "status": "success",
+            "count": len(formatted),
+            "related_files": formatted
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in find_related: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+def search_by_type(file_type: str, repo: str = None, limit: int = 50) -> str:
+    """
+    Get all files of a specific type, optionally filtered by repo.
     
-    return EventSourceResponse(event_generator())
+    Args:
+        file_type: File type to search for
+        repo: Optional: filter by repository
+        limit: Maximum results
+    """
+    try:
+        results = db.search_by_type(file_type, repo, limit)
+        
+        formatted = [
+            {
+                "path": r.path,
+                "repo": r.repo,
+                "summary": r.summary,
+                "tags": r.tags
+            }
+            for r in results
+        ]
+        
+        return json.dumps({
+            "status": "success",
+            "file_type": file_type,
+            "count": len(formatted),
+            "files": formatted
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in search_by_type: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
 
 
-@app.post("/message")
-async def handle_message(request: Request):
-    """Handle MCP messages via POST"""
-    data = await request.json()
-    logger.info(f"Received message: {data}")
-    return JSONResponse({"status": "ok"})
+@mcp.tool()
+def get_stats() -> str:
+    """Get statistics about the indexed knowledge base."""
+    try:
+        stats = db.get_stats()
+        
+        return json.dumps({
+            "status": "success",
+            "stats": {
+                "total_files": stats.total_files,
+                "files_by_type": stats.files_by_type,
+                "files_by_repo": stats.files_by_repo,
+                "files_by_technology": stats.files_by_technology,
+                "last_indexed": stats.last_indexed.isoformat() if stats.last_indexed else None,
+                "total_dependencies": stats.total_dependencies
+            }
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in get_stats: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+def analyze_dependencies(path: str) -> str:
+    """
+    Analyze dependency graph for a specific file.
+    
+    Args:
+        path: Path to analyze
+    """
+    try:
+        deps = db.analyze_dependencies(path)
+        
+        return json.dumps({
+            "status": "success",
+            "dependency_graph": {
+                "root": deps.root,
+                "dependencies": deps.dependencies,
+                "dependents": deps.dependents,
+                "depth": deps.depth
+            }
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"Error in analyze_dependencies: {e}")
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
+        }, indent=2)
+
+
+# ==================== MOUNT MCP TO FASTAPI ====================
+
+# Mount the MCP SSE endpoint to FastAPI
+app.mount("/", mcp.sse_app())
 
 
 # ==================== HEALTH CHECK ====================
@@ -621,7 +449,7 @@ async def root():
         "status": "running",
         "endpoints": {
             "sse": "/sse",
-            "message": "/message",
+            "messages": "/messages/",
             "health": "/health"
         }
     }
