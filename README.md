@@ -263,7 +263,7 @@ Get from: Supabase Dashboard → Settings → Database → Connection String
 | `tags` | JSON | Searchable tags (array) |
 | `content_hash` | String(64) | Content hash for change detection |
 | `indexed_at` | DateTime | Index timestamp |
-| `metadata` | JSON | Additional metadata |
+| `file_metadata` | JSON | Additional metadata |
 
 **Indexes:**
 - `idx_repo_filetype` (repo, file_type)

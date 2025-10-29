@@ -34,7 +34,7 @@ class FileIndex(Base):
     
     content_hash = Column(String(64), nullable=False)
     indexed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    metadata = Column(JSON, nullable=False, default=dict)
+    file_metadata = Column(JSON, nullable=False, default=dict)
     
     # Indexes for better query performance
     __table_args__ = (
@@ -81,7 +81,7 @@ class DatabaseManager:
                 existing.tags = file_knowledge.tags
                 existing.content_hash = file_knowledge.content_hash
                 existing.indexed_at = datetime.utcnow()
-                existing.metadata = file_knowledge.metadata
+                existing.file_metadata = file_knowledge.file_metadata
             else:
                 # Create new
                 new_file = FileIndex(
@@ -95,7 +95,7 @@ class DatabaseManager:
                     dependents=file_knowledge.dependents,
                     tags=file_knowledge.tags,
                     content_hash=file_knowledge.content_hash,
-                    metadata=file_knowledge.metadata
+                    file_metadata=file_knowledge.file_metadata
                 )
                 session.add(new_file)
             

@@ -152,7 +152,7 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Hash of content for change detection"
                     },
-                    "metadata": {
+                    "file_metadata": {
                         "type": "object",
                         "description": "Additional metadata (line_count, complexity, etc.)"
                     }
@@ -181,7 +181,7 @@ async def list_tools() -> list[Tool]:
                                 "dependencies": {"type": "array", "items": {"type": "string"}},
                                 "tags": {"type": "array", "items": {"type": "string"}},
                                 "content_hash": {"type": "string"},
-                                "metadata": {"type": "object"}
+                                "file_metadata": {"type": "object"}
                             },
                             "required": ["path", "repo", "file_type", "technology", "summary", "content_hash"]
                         }
@@ -339,7 +339,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
                 dependents=[],
                 tags=arguments.get("tags", []),
                 content_hash=arguments["content_hash"],
-                metadata=arguments.get("metadata", {})
+                file_metadata=arguments.get("file_metadata", {})
             )
             
             success = db.index_file(file_knowledge)
@@ -367,7 +367,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
                     dependents=[],
                     tags=file_data.get("tags", []),
                     content_hash=file_data["content_hash"],
-                    metadata=file_data.get("metadata", {})
+                    file_metadata=file_data.get("file_metadata", {})
                 ))
             
             results = db.index_batch(files)
@@ -404,7 +404,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
                     "key_elements": result.key_elements,
                     "tags": result.tags,
                     "dependencies": result.dependencies,
-                    "metadata": result.metadata
+                    "file_metadata": result.file_metadata
                 })
             
             return [TextContent(
@@ -435,7 +435,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
                             "dependents": result.dependents,
                             "tags": result.tags,
                             "indexed_at": result.indexed_at.isoformat(),
-                            "metadata": result.metadata
+                            "file_metadata": result.file_metadata
                         }
                     }, indent=2)
                 )]

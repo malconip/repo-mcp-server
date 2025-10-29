@@ -68,7 +68,7 @@ class FileKnowledge(BaseModel):
     indexed_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Additional context
-    metadata: Dict[str, Any] = Field(
+    file_metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Extra metadata (line_count, complexity, etc)"
     )
@@ -94,7 +94,7 @@ class FileKnowledge(BaseModel):
                 "tags": ["azure", "infrastructure", "production"],
                 "content_hash": "abc123def456",
                 "indexed_at": "2025-10-29T18:00:00Z",
-                "metadata": {
+                "file_metadata": {
                     "line_count": 150,
                     "complexity": "medium",
                     "last_modified": "2025-10-28"
@@ -122,7 +122,7 @@ class BatchIndexRequest(BaseModel):
                         "dependents": [],
                         "tags": ["azure"],
                         "content_hash": "abc123",
-                        "metadata": {}
+                        "file_metadata": {}
                     }
                 ]
             }
