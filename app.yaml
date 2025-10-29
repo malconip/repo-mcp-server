@@ -1,9 +1,10 @@
 name: emperion-knowledge-base
-region: nyc
+region: nyc  # Change to match your Supabase region for lower latency
+
 services:
 - name: web
   github:
-    repo: your-username/repo-mcp-server
+    repo: your-username/repo-mcp-server  # Update with your GitHub username/repo
     branch: main
     deploy_on_push: true
   
@@ -18,16 +19,20 @@ services:
   envs:
   - key: DATABASE_URL
     scope: RUN_TIME
-    type: SECRET
+    type: SECRET  # Encrypted
   - key: MCP_SECRET_KEY
     scope: RUN_TIME
-    type: SECRET
+    type: SECRET  # Encrypted
   - key: LOG_LEVEL
     value: INFO
   - key: ALLOWED_ORIGINS
     value: https://claude.ai
+  - key: RATE_LIMIT_PER_HOUR
+    value: "100"
+  - key: MAX_FILE_SIZE_MB
+    value: "10"
   
-  # Health check
+  # Health check - monitors /health endpoint
   health_check:
     http_path: /health
     initial_delay_seconds: 10
@@ -37,10 +42,37 @@ services:
     failure_threshold: 3
   
   # HTTP configuration
-  http_port: 8000
+  # Port must match what uvicorn listens on (8000 default, but DigitalOcean uses $PORT env var)
+  http_port: 8080  # DigitalOcean App Platform default
   
+  # Routes - all traffic goes to /
   routes:
   - path: /
 
-# Note: Using external Supabase PostgreSQL (not DigitalOcean Managed Database)
-# DATABASE_URL is provided via encrypted environment variable
+# ==================== MCP ENDPOINTS ====================
+# FastMCP with Streamable HTTP exposes:
+# - GET  /           → Server info
+# - GET  /health     → Health check
+# - POST /mcp        → MCP Streamable HTTP endpoint (tools, prompts, resources)
+# - GET  /docs       → FastAPI auto-generated Swagger UI
+
+# ==================== DATABASE ====================
+# Using external Supabase PostgreSQL (FREE tier)
+# - 500 MB storage
+# - Pooler connection (port 6543)
+# - SSL/TLS encryption
+# - Automatic backups
+#
+# DATABASE_URL format:
+# postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+#
+# Get from: Supabase Dashboard → Settings → Database → Connection String → URI (Transaction mode)
+
+# ==================== DEPLOYMENT NOTES ====================
+# 1. Update 'repo' above with your GitHub username/repo
+# 2. Push code to GitHub
+# 3. Create app in DigitalOcean using this spec
+# 4. Add encrypted env vars: DATABASE_URL, MCP_SECRET_KEY
+# 5. Deploy!
+#
+# Auto-deploy on push to main branch is enabled

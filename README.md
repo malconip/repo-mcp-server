@@ -1,11 +1,13 @@
 # 🧠 Emperion Knowledge Base - Remote MCP Server
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
-[![MCP](https://img.shields.io/badge/MCP-1.1-orange.svg)](https://modelcontextprotocol.io/)
+[![FastMCP](https://img.shields.io/badge/FastMCP-2.10+-green.svg)](https://github.com/jlowin/fastmcp)
+[![MCP](https://img.shields.io/badge/MCP-1.9-orange.svg)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **AI-powered code intelligence system** that bridges your local repositories with Claude Desktop through the Model Context Protocol (MCP). Store, search, and analyze structured knowledge about your codebase.
+
+> 🚀 **NEW!** Now using **Streamable HTTP** transport (the official recommended protocol) with **FastMCP** for simplified deployment!
 
 ---
 
@@ -26,15 +28,15 @@ A **remote MCP server** that:
 │   (Local AI)     │         │  (Read local files) │
 └────────┬─────────┘         └─────────────────────┘
          │
-         │ SSE/Remote Connection
+         │ Streamable HTTP (Single Endpoint!)
          ▼
 ┌─────────────────────────────────────────────┐
 │     DigitalOcean App Platform ($5/mo)       │
 │  ┌─────────────────────────────────────┐  │
-│  │  Emperion Knowledge Base (FastAPI)   │  │
-│  │  • Index files                        │  │
-│  │  • Search knowledge                   │  │
-│  │  • Analyze dependencies               │  │
+│  │  Emperion Knowledge Base (FastMCP)   │  │
+│  │  • Streamable HTTP on /mcp           │  │
+│  │  • Stateless deployment              │  │
+│  │  • 8 powerful tools                  │  │
 │  └──────────────┬──────────────────────┘  │
 └─────────────────┼────────────────────────────┘
                   │
@@ -46,6 +48,12 @@ A **remote MCP server** that:
 │  • Connection pooling                    │
 └──────────────────────────────────────────┘
 ```
+
+**Why Streamable HTTP?**
+- ✅ **Single endpoint** (`/mcp`) instead of multiple endpoints
+- ✅ **Stateless** - perfect for cloud platforms
+- ✅ **Official standard** - SSE is being deprecated
+- ✅ **Simpler** - less configuration, easier debugging
 
 ---
 
@@ -91,7 +99,7 @@ A **remote MCP server** that:
 - **Supabase account** ([Free PostgreSQL](https://supabase.com)) - **Required**
 - DigitalOcean account ([Get $200 free credits](https://try.digitalocean.com/))
 - GitHub account
-- Claude Desktop installed
+- Claude Desktop installed (with MCP support)
 - Python 3.11+
 
 ### 1. Clone & Setup
@@ -109,16 +117,13 @@ nano .env
 
 ### 2. Setup Supabase Database (2 minutes)
 
-Follow the detailed [**SUPABASE_SETUP.md**](SUPABASE_SETUP.md) guide.
-
-**Quick version:**
-
 1. Create project at https://supabase.com/dashboard
-2. Get connection string from: Settings → Database → Connection String → URI
-3. Copy the PostgreSQL connection string:
+2. Get connection string from: **Settings → Database → Connection String → URI**
+3. Copy the PostgreSQL connection string (Transaction mode with pooler):
    ```
-   postgresql://postgres.xxx:[YOUR-PASSWORD]@db.xxx.supabase.co:5432/postgres
+   postgresql://postgres.xxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
    ```
+4. Update `DATABASE_URL` in your `.env` file
 
 ### 3. Deploy to DigitalOcean
 
@@ -132,9 +137,22 @@ Follow the detailed [**SUPABASE_SETUP.md**](SUPABASE_SETUP.md) guide.
    - `ALLOWED_ORIGINS` - `https://claude.ai`
 5. Deploy!
 
+Your app will be available at: `https://your-app.ondigitalocean.app`
+
 ### 4. Connect Claude Desktop
 
-Edit: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**For Users WITH Claude Pro/Max/Team/Enterprise:**
+
+Go to Claude Desktop → Settings → Connectors → Add Custom Connector
+
+Enter your MCP endpoint URL:
+```
+https://your-app.ondigitalocean.app/mcp
+```
+
+**For Users WITHOUT Pro Plans (using local proxy):**
+
+Edit: `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 
 ```json
 {
@@ -144,22 +162,24 @@ Edit: `~/Library/Application Support/Claude/claude_desktop_config.json`
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "/path/to/your/repos"
+        "/path/to/your/emperion/repos"
       ]
     },
     "emperion-knowledge": {
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-remote",
-        "https://your-app.ondigitalocean.app/sse"
+        "mcp-remote",
+        "https://your-app.ondigitalocean.app/mcp"
       ]
     }
   }
 }
 ```
 
-Restart Claude Desktop (Cmd+Q and reopen).
+**Restart Claude Desktop** completely (Cmd+Q / File → Quit and reopen).
+
+Look for the 🔨 hammer icon to confirm your server is connected!
 
 ---
 
@@ -173,9 +193,9 @@ and index it in the emperion-knowledge server.
 ```
 
 Claude will:
-1. Read the file locally
+1. Read the file locally with filesystem MCP
 2. Extract key information (resources, dependencies, etc.)
-3. Store in the remote knowledge base
+3. Store in the remote knowledge base using Streamable HTTP
 
 ### Searching Knowledge
 
@@ -200,22 +220,33 @@ Returns:
 - Dependents (what depends on this file)
 - Dependency depth
 
+### Getting Statistics
+
+```
+Get stats from emperion-knowledge
+```
+
+Returns:
+- Total files indexed
+- Files by type (Bicep, C#, Python, etc.)
+- Files by repository
+- Files by technology
+- Last indexed timestamp
+
 ---
 
 ## 🗂️ Project Structure
 
 ```
 emperion-knowledge-base/
-├── main.py                    # FastAPI app with SSE endpoint
+├── main.py                    # FastMCP server with Streamable HTTP
 ├── database.py                # SQLAlchemy database layer
 ├── models.py                  # Pydantic models
 ├── config.py                  # Configuration management
-├── requirements.txt           # Python dependencies
+├── requirements.txt           # Python dependencies (with FastMCP)
 ├── Procfile                   # DigitalOcean runtime config
 ├── app.yaml                   # App Platform specification
 ├── .env.example               # Environment template
-├── SUPABASE_SETUP.md          # Supabase setup guide
-├── SUPABASE_QUICK_GUIDE.md    # Quick visual guide
 ├── README.md                  # This file
 └── LICENSE                    # MIT License
 ```
@@ -238,10 +269,10 @@ emperion-knowledge-base/
 ### Supabase Connection String Format
 
 ```
-postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
+postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
 ```
 
-Get from: Supabase Dashboard → Settings → Database → Connection String
+Get from: **Supabase Dashboard → Settings → Database → Connection String → URI (Transaction mode)**
 
 ---
 
@@ -278,9 +309,9 @@ Get from: Supabase Dashboard → Settings → Database → Connection String
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Server info |
-| `/health` | GET | Health check |
-| `/sse` | GET | SSE endpoint for MCP |
-| `/message` | POST | MCP message handler |
+| `/health` | GET | Health check with stats |
+| `/mcp` | POST | **MCP Streamable HTTP endpoint** |
+| `/docs` | GET | FastAPI auto-generated docs |
 
 ---
 
@@ -322,6 +353,8 @@ export MCP_SECRET_KEY="your-secret-key"
 python main.py
 
 # Server runs on: http://localhost:8000
+# MCP endpoint: http://localhost:8000/mcp
+# Health check: http://localhost:8000/health
 ```
 
 ### Test Endpoints
@@ -330,8 +363,21 @@ python main.py
 # Health check
 curl http://localhost:8000/health
 
-# Get stats
+# Server info
 curl http://localhost:8000/
+
+# API docs (Swagger UI)
+open http://localhost:8000/docs
+```
+
+### Test MCP Locally
+
+```bash
+# Install MCP inspector
+pip install mcp-inspector
+
+# Test your server
+mcp-inspector http://localhost:8000/mcp
 ```
 
 ---
@@ -344,10 +390,11 @@ curl http://localhost:8000/
 1. ✅ Is your Supabase project status "Active"?
 2. ✅ Did you replace `[YOUR-PASSWORD]` in the connection string?
 3. ✅ Is the connection string in the correct format?
+4. ✅ Are you using the **pooler** connection (port 6543)?
 
 **Test connection:**
 ```bash
-psql "postgresql://postgres:password@db.xxx.supabase.co:5432/postgres"
+psql "postgresql://postgres:password@aws-0-region.pooler.supabase.com:6543/postgres"
 ```
 
 ### "Password authentication failed"
@@ -356,6 +403,7 @@ psql "postgresql://postgres:password@db.xxx.supabase.co:5432/postgres"
 1. Go to Supabase → Settings → Database
 2. Click "Reset Database Password"
 3. Update DATABASE_URL with new password
+4. Redeploy your DigitalOcean app
 
 ### "Health check failed" in DigitalOcean
 
@@ -364,7 +412,40 @@ psql "postgresql://postgres:password@db.xxx.supabase.co:5432/postgres"
 Apps → Your App → Runtime Logs
 ```
 
-Look for database connection errors.
+Look for database connection errors or missing environment variables.
+
+### Claude Desktop not showing tools
+
+**Check:**
+1. ✅ Completely restart Claude Desktop (Quit and reopen)
+2. ✅ Look for 🔨 hammer icon in Claude
+3. ✅ Check Claude Desktop logs: `~/Library/Logs/Claude/` (Mac)
+4. ✅ Verify your MCP endpoint is accessible: `curl https://your-app.ondigitalocean.app/health`
+
+---
+
+## 🔄 Migration from SSE to Streamable HTTP
+
+If you had the old SSE version, here's what changed:
+
+**OLD (SSE):**
+```python
+# Multiple endpoints
+@app.get("/sse")  # SSE connection
+Mount("/messages/", sse_transport.handle_post_message)  # Message handler
+```
+
+**NEW (Streamable HTTP):**
+```python
+# Single endpoint
+app.mount("/mcp", mcp.streamable_http_app())  # Everything handled here!
+```
+
+**Benefits:**
+- ✅ 1 endpoint instead of 2
+- ✅ Stateless (better for cloud)
+- ✅ Simpler configuration
+- ✅ Official standard
 
 ---
 
@@ -388,17 +469,18 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🙏 Acknowledgments
 
 - [Anthropic MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+- [FastMCP](https://github.com/jlowin/fastmcp) - High-level MCP framework
 - [Supabase](https://supabase.com/) - PostgreSQL database platform
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
 - [DigitalOcean](https://www.digitalocean.com/) - Cloud infrastructure
 
 ---
 
-## 📚 Documentation
+## 📚 Additional Resources
 
-- **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** - Complete Supabase setup guide
-- **[SUPABASE_QUICK_GUIDE.md](SUPABASE_QUICK_GUIDE.md)** - Visual quick reference
-- **[CHECKLIST.md](CHECKLIST.md)** - Pre-deployment checklist
+- **[MCP Documentation](https://modelcontextprotocol.io/docs)** - Official MCP docs
+- **[FastMCP Docs](https://gofastmcp.com/)** - FastMCP documentation
+- **[Streamable HTTP Spec](https://spec.modelcontextprotocol.io/specification/basic/transports/#http-with-sse)** - Transport specification
 
 ---
 
@@ -411,4 +493,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 **Built with ❤️ by Malcon Albuquerque for the Emperion Project**
 
-**Powered by:** Supabase (PostgreSQL) + DigitalOcean (Hosting) + Anthropic MCP
+**Powered by:** FastMCP + Supabase (PostgreSQL) + DigitalOcean (Hosting) + Anthropic MCP
+
+🚀 **Now with Streamable HTTP - The future of MCP!**

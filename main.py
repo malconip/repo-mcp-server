@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 """
-Emperion Knowledge Base - Remote MCP Server (SSE)
+Emperion Knowledge Base - Remote MCP Server with FastMCP
+Streamable HTTP transport for Claude Desktop
 """
 
-import json
 import logging
-from typing import Any, Sequence
+from typing import List, Dict, Any
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
-
-from mcp.server.lowlevel import Server
-from mcp.server.sse import SseServerTransport
-from mcp.types import Tool, TextContent
+from fastapi import FastAPI
+from fastmcp import FastMCP
 
 from database import db
-from models import FileKnowledge, SearchQuery, FileType, Technology
+from models import (
+    FileKnowledge, SearchQuery, FileType, Technology,
+    DependencyGraph, IndexStats
+)
 from config import config
 
 # Setup logging
@@ -28,314 +24,447 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Enable debug logging for MCP modules
-logging.getLogger("mcp.server.sse").setLevel(logging.DEBUG)
-logging.getLogger("mcp.server").setLevel(logging.DEBUG)
-logging.getLogger("mcp").setLevel(logging.DEBUG)
+# ==================== FASTMCP SERVER ====================
 
-# Initialize MCP server
-mcp_server = Server("emperion-knowledge-base")
+# Create FastMCP server with stateless HTTP for cloud deployment
+mcp = FastMCP(
+    "emperion-knowledge-base",
+    dependencies=["fastapi", "sqlalchemy", "psycopg2-binary", "pydantic"],
+    stateless_http=True  # CRITICAL for DigitalOcean/Cloud deployment
+)
 
-# Create SSE transport - MUST be created once at module level
-sse_transport = SseServerTransport("/messages/")
-
-
-# ==================== LIFESPAN ====================
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
+# Initialize database on startup
+@mcp.lifespan()
+async def lifespan():
+    """Initialize database on startup"""
     logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
-    
     try:
         db.init_db()
         logger.info("✅ Database initialized")
-    except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        raise
-    
-    logger.info("✅ MCP Server ready on SSE endpoint /sse")
-    yield
-    logger.info("👋 Shutting down MCP Server...")
-
-
-# ==================== MCP TOOLS DEFINITION ====================
-
-@mcp_server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List all available MCP tools"""
-    return [
-        Tool(
-            name="index_file",
-            description="Index a single file's structured knowledge",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "repo": {"type": "string"},
-                    "file_type": {"type": "string", "enum": [ft.value for ft in FileType]},
-                    "technology": {"type": "string", "enum": [t.value for t in Technology]},
-                    "summary": {"type": "string"},
-                    "content_hash": {"type": "string"},
-                    "key_elements": {"type": "array", "items": {"type": "string"}},
-                    "dependencies": {"type": "array", "items": {"type": "string"}},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                    "file_metadata": {"type": "object"}
-                },
-                "required": ["path", "repo", "file_type", "technology", "summary", "content_hash"]
-            }
-        ),
-        Tool(
-            name="index_batch",
-            description="Index multiple files at once",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "files": {"type": "array", "items": {"type": "object"}}
-                },
-                "required": ["files"]
-            }
-        ),
-        Tool(
-            name="search_knowledge",
-            description="Search files using keyword/semantic search",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {"type": "integer", "default": 10}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="get_file_context",
-            description="Get complete context for a specific file",
-            inputSchema={
-                "type": "object",
-                "properties": {"path": {"type": "string"}},
-                "required": ["path"]
-            }
-        ),
-        Tool(
-            name="find_related",
-            description="Find files related to a given file",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "limit": {"type": "integer", "default": 10}
-                },
-                "required": ["path"]
-            }
-        ),
-        Tool(
-            name="search_by_type",
-            description="Get all files of a specific type",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "file_type": {"type": "string"},
-                    "repo": {"type": "string"},
-                    "limit": {"type": "integer", "default": 50}
-                },
-                "required": ["file_type"]
-            }
-        ),
-        Tool(
-            name="get_stats",
-            description="Get knowledge base statistics",
-            inputSchema={"type": "object", "properties": {}}
-        ),
-        Tool(
-            name="analyze_dependencies",
-            description="Analyze dependency graph for a file",
-            inputSchema={
-                "type": "object",
-                "properties": {"path": {"type": "string"}},
-                "required": ["path"]
-            }
-        )
-    ]
-
-
-@mcp_server.call_tool()
-async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
-    """Handle MCP tool calls"""
-    try:
-        # Index file
-        if name == "index_file":
-            fk = FileKnowledge(
-                path=arguments["path"],
-                repo=arguments["repo"],
-                file_type=FileType(arguments["file_type"]),
-                technology=Technology(arguments["technology"]),
-                summary=arguments["summary"],
-                content_hash=arguments["content_hash"],
-                key_elements=arguments.get("key_elements", []),
-                dependencies=arguments.get("dependencies", []),
-                dependents=[],
-                tags=arguments.get("tags", []),
-                file_metadata=arguments.get("file_metadata", {})
-            )
-            success = db.index_file(fk)
-            return [TextContent(type="text", text=json.dumps({
-                "status": "success" if success else "error",
-                "path": arguments["path"]
-            }))]
         
-        # Index batch
-        elif name == "index_batch":
-            files = [FileKnowledge(
-                path=f["path"], repo=f["repo"],
+        # Validate configuration
+        if config.validate():
+            logger.info("✅ Configuration validated")
+        else:
+            logger.warning("⚠️  Configuration has warnings (see above)")
+        
+        yield  # Server runs here
+        
+        logger.info("👋 Shutting down MCP Server...")
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        raise
+
+
+# ==================== MCP TOOLS ====================
+
+@mcp.tool()
+def index_file(
+    path: str,
+    repo: str,
+    file_type: str,
+    technology: str,
+    summary: str,
+    content_hash: str,
+    key_elements: List[str] = [],
+    dependencies: List[str] = [],
+    tags: List[str] = [],
+    file_metadata: Dict[str, Any] = {}
+) -> dict:
+    """
+    Index a single file's structured knowledge.
+    
+    Args:
+        path: Full path to the file
+        repo: Repository name
+        file_type: Type of file (bicep, csharp, python, etc.)
+        technology: Technology category (infrastructure-as-code, backend, etc.)
+        summary: Brief summary of the file purpose
+        content_hash: Hash of the content for change detection
+        key_elements: Important elements (resources, classes, functions)
+        dependencies: Files this one depends on
+        tags: Searchable tags
+        file_metadata: Extra metadata (line_count, complexity, etc)
+    
+    Returns:
+        dict: Status and indexed file path
+    """
+    try:
+        fk = FileKnowledge(
+            path=path,
+            repo=repo,
+            file_type=FileType(file_type),
+            technology=Technology(technology),
+            summary=summary,
+            content_hash=content_hash,
+            key_elements=key_elements,
+            dependencies=dependencies,
+            dependents=[],
+            tags=tags,
+            file_metadata=file_metadata
+        )
+        success = db.index_file(fk)
+        
+        if success:
+            logger.info(f"✅ Indexed: {path}")
+            return {"status": "success", "path": path}
+        else:
+            logger.error(f"❌ Failed to index: {path}")
+            return {"status": "error", "path": path, "message": "Database operation failed"}
+            
+    except ValueError as e:
+        logger.error(f"❌ Invalid input for {path}: {e}")
+        return {"status": "error", "path": path, "message": str(e)}
+    except Exception as e:
+        logger.error(f"❌ Unexpected error indexing {path}: {e}")
+        return {"status": "error", "path": path, "message": f"Unexpected error: {str(e)}"}
+
+
+@mcp.tool()
+def index_batch(files: List[Dict[str, Any]]) -> dict:
+    """
+    Index multiple files at once for efficient bulk operations.
+    
+    Args:
+        files: List of file objects with all required fields
+    
+    Returns:
+        dict: Success and failed counts
+    """
+    try:
+        file_objects = []
+        for f in files:
+            fk = FileKnowledge(
+                path=f["path"],
+                repo=f["repo"],
                 file_type=FileType(f["file_type"]),
                 technology=Technology(f["technology"]),
-                summary=f["summary"], content_hash=f["content_hash"],
+                summary=f["summary"],
+                content_hash=f["content_hash"],
                 key_elements=f.get("key_elements", []),
-                dependencies=f.get("dependencies", []), dependents=[],
-                tags=f.get("tags", []), file_metadata=f.get("file_metadata", {})
-            ) for f in arguments["files"]]
-            results = db.index_batch(files)
-            return [TextContent(type="text", text=json.dumps(results))]
-        
-        # Search
-        elif name == "search_knowledge":
-            query = SearchQuery(query=arguments["query"], limit=arguments.get("limit", 10))
-            results = db.search_knowledge(query)
-            formatted = [{"path": r.path, "repo": r.repo, "summary": r.summary} for r in results]
-            return [TextContent(type="text", text=json.dumps({"results": formatted}))]
-        
-        # Get file context
-        elif name == "get_file_context":
-            result = db.get_file_context(arguments["path"])
-            if result:
-                return [TextContent(type="text", text=json.dumps({
-                    "path": result.path, "repo": result.repo,
-                    "summary": result.summary, "tags": result.tags
-                }))]
-            return [TextContent(type="text", text=json.dumps({"error": "not_found"}))]
-        
-        # Find related
-        elif name == "find_related":
-            results = db.find_related(arguments["path"], arguments.get("limit", 10))
-            formatted = [{"path": r.path, "summary": r.summary} for r in results]
-            return [TextContent(type="text", text=json.dumps({"results": formatted}))]
-        
-        # Search by type
-        elif name == "search_by_type":
-            results = db.search_by_type(
-                arguments["file_type"],
-                arguments.get("repo"),
-                arguments.get("limit", 50)
+                dependencies=f.get("dependencies", []),
+                dependents=[],
+                tags=f.get("tags", []),
+                file_metadata=f.get("file_metadata", {})
             )
-            formatted = [{"path": r.path, "summary": r.summary} for r in results]
-            return [TextContent(type="text", text=json.dumps({"results": formatted}))]
+            file_objects.append(fk)
         
-        # Get stats
-        elif name == "get_stats":
-            stats = db.get_stats()
-            return [TextContent(type="text", text=json.dumps({
-                "total_files": stats.total_files,
-                "files_by_type": stats.files_by_type
-            }))]
+        results = db.index_batch(file_objects)
+        logger.info(f"📦 Batch indexed: {results['success']} success, {results['failed']} failed")
+        return results
         
-        # Analyze dependencies
-        elif name == "analyze_dependencies":
-            deps = db.analyze_dependencies(arguments["path"])
-            return [TextContent(type="text", text=json.dumps({
-                "root": deps.root,
-                "dependencies": deps.dependencies,
-                "dependents": deps.dependents
-            }))]
-        
-        return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
-    
     except Exception as e:
-        logger.error(f"Tool error: {e}")
-        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+        logger.error(f"❌ Batch index error: {e}")
+        return {"success": 0, "failed": len(files), "error": str(e)}
 
 
-# ==================== FASTAPI APP ====================
-
-app = FastAPI(
-    title="Emperion Knowledge Base MCP Server",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ==================== SSE ENDPOINTS ====================
-
-@app.get("/sse")
-async def handle_sse(request: Request) -> Response:
-    """SSE endpoint for MCP communication"""
-    logger.info("SSE connection established")
-    logger.info(f"Request scope: {request.scope.get('type')}")
-    logger.info(f"Request path: {request.scope.get('path')}")
+@mcp.tool()
+def search_knowledge(
+    query: str,
+    limit: int = 10,
+    file_types: List[str] = None,
+    technologies: List[str] = None,
+    repos: List[str] = None,
+    tags: List[str] = None
+) -> dict:
+    """
+    Search files using keyword/semantic search across summaries, tags, and key elements.
     
+    Args:
+        query: Search query string
+        limit: Maximum number of results (1-100)
+        file_types: Filter by file types (optional)
+        technologies: Filter by technology categories (optional)
+        repos: Filter by repository names (optional)
+        tags: Filter by tags (optional)
+    
+    Returns:
+        dict: Search results with path, repo, and summary
+    """
     try:
-        async with sse_transport.connect_sse(
-            request.scope,
-            request.receive,
-            request._send
-        ) as streams:
-            logger.info("SSE streams created successfully")
-            logger.info(f"Read stream: {streams[0]}")
-            logger.info(f"Write stream: {streams[1]}")
-            
-            await mcp_server.run(
-                streams[0],
-                streams[1],
-                mcp_server.create_initialization_options()
-            )
-            logger.info("MCP server run completed")
+        search_query = SearchQuery(
+            query=query,
+            limit=min(limit, 100),
+            file_types=[FileType(ft) for ft in file_types] if file_types else None,
+            technologies=[Technology(t) for t in technologies] if technologies else None,
+            repos=repos,
+            tags=tags
+        )
+        
+        results = db.search_knowledge(search_query)
+        formatted = [
+            {
+                "path": r.path,
+                "repo": r.repo,
+                "file_type": r.file_type,
+                "technology": r.technology,
+                "summary": r.summary,
+                "tags": r.tags,
+                "key_elements": r.key_elements
+            }
+            for r in results
+        ]
+        
+        logger.info(f"🔍 Search '{query}' returned {len(formatted)} results")
+        return {"results": formatted, "count": len(formatted)}
+        
     except Exception as e:
-        logger.error(f"Error in SSE handler: {e}", exc_info=True)
-        raise
+        logger.error(f"❌ Search error: {e}")
+        return {"results": [], "count": 0, "error": str(e)}
+
+
+@mcp.tool()
+def get_file_context(path: str) -> dict:
+    """
+    Get complete context for a specific file including all metadata.
     
-    # Must return Response to avoid NoneType error on disconnect
-    logger.info("Returning empty Response")
-    return Response()
+    Args:
+        path: Full path to the file
+    
+    Returns:
+        dict: Complete file information or error
+    """
+    try:
+        result = db.get_file_context(path)
+        
+        if result:
+            logger.info(f"📄 Retrieved context for: {path}")
+            return {
+                "path": result.path,
+                "repo": result.repo,
+                "file_type": result.file_type,
+                "technology": result.technology,
+                "summary": result.summary,
+                "key_elements": result.key_elements,
+                "dependencies": result.dependencies,
+                "dependents": result.dependents,
+                "tags": result.tags,
+                "content_hash": result.content_hash,
+                "indexed_at": result.indexed_at.isoformat(),
+                "file_metadata": result.file_metadata
+            }
+        else:
+            logger.warning(f"⚠️  File not found: {path}")
+            return {"error": "not_found", "path": path}
+            
+    except Exception as e:
+        logger.error(f"❌ Error getting context for {path}: {e}")
+        return {"error": str(e), "path": path}
 
 
-# Mount the POST message handler as ASGI app
-app.mount("/messages/", sse_transport.handle_post_message)
+@mcp.tool()
+def find_related(path: str, limit: int = 10) -> dict:
+    """
+    Find files related to a given file based on repo, technology, and tags.
+    
+    Args:
+        path: Full path to the source file
+        limit: Maximum number of related files (1-50)
+    
+    Returns:
+        dict: List of related files with paths and summaries
+    """
+    try:
+        results = db.find_related(path, min(limit, 50))
+        formatted = [
+            {
+                "path": r.path,
+                "repo": r.repo,
+                "file_type": r.file_type,
+                "technology": r.technology,
+                "summary": r.summary,
+                "tags": r.tags
+            }
+            for r in results
+        ]
+        
+        logger.info(f"🔗 Found {len(formatted)} related files for: {path}")
+        return {"results": formatted, "count": len(formatted)}
+        
+    except Exception as e:
+        logger.error(f"❌ Error finding related files for {path}: {e}")
+        return {"results": [], "count": 0, "error": str(e)}
 
 
-# ==================== REGULAR ENDPOINTS ====================
+@mcp.tool()
+def search_by_type(
+    file_type: str,
+    repo: str = None,
+    limit: int = 50
+) -> dict:
+    """
+    Get all files of a specific type, optionally filtered by repository.
+    
+    Args:
+        file_type: Type of file (bicep, csharp, python, yaml, etc.)
+        repo: Repository name (optional)
+        limit: Maximum number of results (1-100)
+    
+    Returns:
+        dict: List of files matching the type
+    """
+    try:
+        results = db.search_by_type(file_type, repo, min(limit, 100))
+        formatted = [
+            {
+                "path": r.path,
+                "repo": r.repo,
+                "summary": r.summary,
+                "technology": r.technology,
+                "tags": r.tags,
+                "indexed_at": r.indexed_at.isoformat()
+            }
+            for r in results
+        ]
+        
+        logger.info(f"📁 Found {len(formatted)} files of type '{file_type}'")
+        return {"results": formatted, "count": len(formatted)}
+        
+    except Exception as e:
+        logger.error(f"❌ Error searching by type '{file_type}': {e}")
+        return {"results": [], "count": 0, "error": str(e)}
 
-@app.get("/health")
-async def health_check():
-    """Health check"""
+
+@mcp.tool()
+def get_stats() -> dict:
+    """
+    Get knowledge base statistics including totals by type, repo, and technology.
+    
+    Returns:
+        dict: Comprehensive statistics about the indexed knowledge
+    """
     try:
         stats = db.get_stats()
-        return {"status": "healthy", "total_files": stats.total_files}
+        result = {
+            "total_files": stats.total_files,
+            "files_by_type": stats.files_by_type,
+            "files_by_repo": stats.files_by_repo,
+            "files_by_technology": stats.files_by_technology,
+            "total_dependencies": stats.total_dependencies,
+            "last_indexed": stats.last_indexed.isoformat() if stats.last_indexed else None
+        }
+        
+        logger.info(f"📊 Stats: {stats.total_files} total files")
+        return result
+        
     except Exception as e:
-        return JSONResponse(status_code=503, content={"status": "unhealthy", "error": str(e)})
+        logger.error(f"❌ Error getting stats: {e}")
+        return {"error": str(e)}
 
 
+@mcp.tool()
+def analyze_dependencies(path: str) -> dict:
+    """
+    Analyze dependency graph for a file showing what it depends on and what depends on it.
+    
+    Args:
+        path: Full path to the file
+    
+    Returns:
+        dict: Dependency graph with dependencies and dependents
+    """
+    try:
+        deps = db.analyze_dependencies(path)
+        result = {
+            "root": deps.root,
+            "dependencies": deps.dependencies,
+            "dependents": deps.dependents,
+            "depth": deps.depth,
+            "total_dependencies": len(deps.dependencies),
+            "total_dependents": len(deps.dependents)
+        }
+        
+        logger.info(f"🔀 Analyzed dependencies for: {path}")
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"⚠️  {e}")
+        return {"error": str(e), "path": path}
+    except Exception as e:
+        logger.error(f"❌ Error analyzing dependencies for {path}: {e}")
+        return {"error": str(e), "path": path}
+
+
+# ==================== FASTAPI APP WITH CUSTOM ENDPOINTS ====================
+
+# Create FastAPI app with MCP lifespan
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    """Lifespan for FastAPI app"""
+    async with mcp.session_manager.run():
+        yield
+
+app = FastAPI(
+    title="Emperion Knowledge Base",
+    description="AI-powered code intelligence MCP server",
+    version="2.0.0",
+    lifespan=app_lifespan
+)
+
+# Mount MCP Streamable HTTP endpoint at /mcp
+app.mount("/mcp", mcp.streamable_http_app())
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    try:
+        stats = db.get_stats()
+        return {
+            "status": "healthy",
+            "server": "emperion-knowledge-base",
+            "version": "2.0.0",
+            "transport": "streamable-http",
+            "total_files": stats.total_files,
+            "database": "connected"
+        }
+    except Exception as e:
+        logger.error(f"❌ Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+# Root endpoint
 @app.get("/")
 async def root():
-    """Root endpoint"""
+    """Root endpoint with server information"""
     return {
         "name": "Emperion Knowledge Base",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "description": "AI-powered code intelligence MCP server",
+        "transport": "streamable-http",
         "endpoints": {
-            "sse": "/sse",
-            "messages": "/messages/",
-            "health": "/health"
-        }
+            "mcp": "/mcp (Streamable HTTP)",
+            "health": "/health",
+            "docs": "/docs"
+        },
+        "tools": [
+            "index_file",
+            "index_batch",
+            "search_knowledge",
+            "get_file_context",
+            "find_related",
+            "search_by_type",
+            "get_stats",
+            "analyze_dependencies"
+        ]
     }
 
 
+# ==================== MAIN ====================
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    
+    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
+    logger.info("📡 Transport: Streamable HTTP")
+    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8000/mcp")
+    logger.info("❤️  Health Check: http://0.0.0.0:8000/health")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )
