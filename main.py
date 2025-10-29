@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
-from mcp.server import Server
+from mcp.server.lowlevel import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
 
@@ -22,8 +22,16 @@ from models import FileKnowledge, SearchQuery, FileType, Technology
 from config import config
 
 # Setup logging
-logging.basicConfig(level=getattr(logging, config.LOG_LEVEL))
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Enable debug logging for MCP modules
+logging.getLogger("mcp.server.sse").setLevel(logging.DEBUG)
+logging.getLogger("mcp.server").setLevel(logging.DEBUG)
+logging.getLogger("mcp").setLevel(logging.DEBUG)
 
 # Initialize MCP server
 mcp_server = Server("emperion-knowledge-base")
