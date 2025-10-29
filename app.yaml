@@ -1,0 +1,51 @@
+name: emperion-knowledge-base
+region: nyc
+services:
+- name: web
+  github:
+    repo: your-username/repo-mcp-server
+    branch: main
+    deploy_on_push: true
+  
+  # Python runtime
+  environment_slug: python
+  
+  # Instance configuration
+  instance_count: 1
+  instance_size_slug: basic-xxs  # $5/month
+  
+  # Environment variables
+  envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    type: SECRET
+  - key: MCP_SECRET_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: LOG_LEVEL
+    value: INFO
+  - key: ALLOWED_ORIGINS
+    value: https://claude.ai
+  
+  # Health check
+  health_check:
+    http_path: /health
+    initial_delay_seconds: 10
+    period_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3
+  
+  # HTTP configuration
+  http_port: 8000
+  
+  routes:
+  - path: /
+
+# Database (Managed PostgreSQL)
+databases:
+- name: emperion-kb-db
+  engine: PG
+  version: "16"
+  size: db-s-1vcpu-1gb  # $15/month (or use free credits)
+  production: false  # Set true for prod
