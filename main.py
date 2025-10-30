@@ -30,10 +30,7 @@ logger = logging.getLogger(__name__)
 
 # ==================== FASTMCP SERVER ====================
 
-mcp = FastMCP(
-    name="emperion-knowledge-base",
-    description="AI-powered code intelligence MCP server"
-)
+mcp = FastMCP("emperion-knowledge-base")
 
 # ==================== MCP TOOLS ====================
 
