@@ -286,7 +286,7 @@ async def combined_lifespan(app: FastAPI):
     """Combined lifespan that initializes both FastAPI and FastMCP"""
     logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
     logger.info("📍 Deployment: DigitalOcean App Platform")
-    logger.info("🔌 FastMCP mounted at: /mcp")
+    logger.info("🔌 FastMCP mounted at: /mcp/")
     
     # Use AsyncExitStack to manage both lifespans
     async with AsyncExitStack() as stack:
@@ -334,7 +334,7 @@ async def health_check():
             "status": "healthy",
             "server": "emperion-knowledge-base",
             "version": "2.0.4",
-            "mcp_endpoint": "/mcp",
+            "mcp_endpoint": "/mcp/",
             "total_files": stats.total_files,
             "database": "connected"
         })
@@ -353,14 +353,14 @@ async def root():
         "name": "Emperion Knowledge Base",
         "version": "2.0.4",
         "status": "online",
-        "mcp_endpoint": "/mcp (Streamable HTTP)",
+        "mcp_endpoint": "/mcp/ (Streamable HTTP)",
         "health_endpoint": "/health",
         "tools": 8,
         "documentation": "/docs"
     }
 
-# Mount FastMCP at /mcp
-app.mount("/mcp", mcp_http_app)
+# Mount FastMCP at /mcp/ (trailing slash is critical!)
+app.mount("/mcp/", mcp_http_app)
 
 
 if __name__ == "__main__":
@@ -368,7 +368,7 @@ if __name__ == "__main__":
     
     logger.info("🚀 Starting with uvicorn...")
     logger.info("📡 Transport: Streamable HTTP")
-    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8080/mcp")
+    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8080/mcp/")
     logger.info("❤️  Health Check: http://0.0.0.0:8080/health")
     
     uvicorn.run(
