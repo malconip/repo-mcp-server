@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Emperion Knowledge Base - Remote MCP Server with FastMCP
-Streamable HTTP transport for Claude Desktop
+Streamable HTTP transport for DigitalOcean App Platform
 """
 
 import logging
 from typing import List, Dict, Any
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 
@@ -366,6 +366,8 @@ def analyze_dependencies(path: str) -> dict:
 async def app_lifespan(app: FastAPI):
     """Initialize database on startup"""
     logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
+    logger.info("📍 Deployment: DigitalOcean App Platform")
+    logger.info("🔌 MCP mounted at: / (root)")
     try:
         db.init_db()
         logger.info("✅ Database initialized")
@@ -383,25 +385,26 @@ async def app_lifespan(app: FastAPI):
         logger.error(f"❌ Startup failed: {e}")
         raise
 
-# Create FastAPI app WITHOUT redirect_slashes to avoid 307 redirects
+# Create FastAPI app
 app = FastAPI(
     title="Emperion Knowledge Base",
     description="AI-powered code intelligence MCP server",
-    version="2.0.0",
-    lifespan=app_lifespan,
-    redirect_slashes=False
+    version="2.0.1",
+    lifespan=app_lifespan
 )
 
-# Health check endpoint
+@app.get("/health")
 async def health_check():
-    """Health check endpoint for monitoring"""
+    """Health check endpoint for DigitalOcean monitoring"""
     try:
         stats = db.get_stats()
         return JSONResponse({
             "status": "healthy",
             "server": "emperion-knowledge-base",
-            "version": "2.0.0",
+            "version": "2.0.1",
             "transport": "streamable-http",
+            "deployment": "digitalocean",
+            "mcp_endpoint": "/ (root)",
             "total_files": stats.total_files,
             "database": "connected"
         })
@@ -412,37 +415,8 @@ async def health_check():
             "error": str(e)
         }, status_code=500)
 
-# ==================== MCP ENDPOINT ====================
-# Mount MCP at /mcp (FastMCP http_app handles Streamable HTTP protocol)
-app.mount("/mcp", mcp.http_app())
-
-# Root info endpoint
-@app.get("/")
-async def root():
-    """Root endpoint with server information"""
-    return {
-        "name": "Emperion Knowledge Base",
-        "version": "2.0.0",
-        "description": "AI-powered code intelligence MCP server - Your DevOps guide",
-        "transport": "streamable-http",
-        "status": "online",
-        "endpoints": {
-            "mcp": "/mcp (MCP Streamable HTTP - use this for mcp-remote)",
-            "health": "/health (Health check with stats)",
-            "docs": "/docs (API documentation)"
-        },
-        "tools": [
-            "index_file - Index a single file",
-            "index_batch - Bulk index files",
-            "search_knowledge - Search your codebase",
-            "get_file_context - Get file details",
-            "find_related - Find related files",
-            "search_by_type - Filter by file type",
-            "get_stats - Knowledge base statistics",
-            "analyze_dependencies - Dependency graph"
-        ],
-        "usage": "Connect via Claude Desktop using mcp-remote proxy"
-    }
+# ==================== MOUNT MCP AT ROOT ====================
+app.mount("/", mcp.http_app())
 
 
 # ==================== MAIN ====================
@@ -452,13 +426,14 @@ if __name__ == "__main__":
     
     logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
     logger.info("📡 Transport: Streamable HTTP")
-    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8000/mcp")
-    logger.info("❤️  Health Check: http://0.0.0.0:8000/health")
+    logger.info("📍 Deployment: DigitalOcean App Platform")
+    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8080/ (ROOT)")
+    logger.info("❤️  Health Check: http://0.0.0.0:8080/health")
     logger.info("🎯 Purpose: DevOps guide for your infrastructure code")
     
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=8080,
         log_level="info"
     )
