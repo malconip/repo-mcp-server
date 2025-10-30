@@ -257,10 +257,14 @@ class DatabaseManager:
                 FileIndex.indexed_at.desc()
             ).first()
             
-            # Total dependencies
-            total_deps = session.query(
-                text("SUM(json_array_length(dependencies)) as total")
-            ).scalar() or 0
+            # Total dependencies (handle potential column issues gracefully)
+            try:
+                total_deps = session.query(
+                    text("SUM(json_array_length(dependencies)) as total")
+                ).scalar() or 0
+            except Exception:
+                # Fallback if json_array_length doesn't work
+                total_deps = 0
             
             return IndexStats(
                 total_files=total,
