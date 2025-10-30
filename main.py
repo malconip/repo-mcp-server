@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 
 from database import db
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # ==================== FASTMCP SERVER ====================
 
-# Create FastMCP server (simple - no deprecated params)
+# Create FastMCP server
 mcp = FastMCP("emperion-knowledge-base")
 
 
@@ -361,7 +362,6 @@ def analyze_dependencies(path: str) -> dict:
 
 # ==================== FASTAPI APP ====================
 
-# Simple lifespan - just initialize database
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     """Initialize database on startup"""
@@ -383,61 +383,65 @@ async def app_lifespan(app: FastAPI):
         logger.error(f"❌ Startup failed: {e}")
         raise
 
+# Create FastAPI app WITHOUT redirect_slashes to avoid 307 redirects
 app = FastAPI(
     title="Emperion Knowledge Base",
     description="AI-powered code intelligence MCP server",
     version="2.0.0",
-    lifespan=app_lifespan
+    lifespan=app_lifespan,
+    redirect_slashes=False
 )
 
-# Mount MCP endpoint using NEW API (http_app instead of streamable_http_app)
-app.mount("/mcp", mcp.http_app())
-
 # Health check endpoint
-@app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring"""
     try:
         stats = db.get_stats()
-        return {
+        return JSONResponse({
             "status": "healthy",
             "server": "emperion-knowledge-base",
             "version": "2.0.0",
             "transport": "streamable-http",
             "total_files": stats.total_files,
             "database": "connected"
-        }
+        })
     except Exception as e:
         logger.error(f"❌ Health check failed: {e}")
-        return {
+        return JSONResponse({
             "status": "unhealthy",
             "error": str(e)
-        }
+        }, status_code=500)
 
-# Root endpoint
+# ==================== MCP ENDPOINT ====================
+# Mount MCP at /mcp (FastMCP http_app handles Streamable HTTP protocol)
+app.mount("/mcp", mcp.http_app())
+
+# Root info endpoint
 @app.get("/")
 async def root():
     """Root endpoint with server information"""
     return {
         "name": "Emperion Knowledge Base",
         "version": "2.0.0",
-        "description": "AI-powered code intelligence MCP server",
+        "description": "AI-powered code intelligence MCP server - Your DevOps guide",
         "transport": "streamable-http",
+        "status": "online",
         "endpoints": {
-            "mcp": "/mcp (Streamable HTTP)",
-            "health": "/health",
-            "docs": "/docs"
+            "mcp": "/mcp (MCP Streamable HTTP - use this for mcp-remote)",
+            "health": "/health (Health check with stats)",
+            "docs": "/docs (API documentation)"
         },
         "tools": [
-            "index_file",
-            "index_batch",
-            "search_knowledge",
-            "get_file_context",
-            "find_related",
-            "search_by_type",
-            "get_stats",
-            "analyze_dependencies"
-        ]
+            "index_file - Index a single file",
+            "index_batch - Bulk index files",
+            "search_knowledge - Search your codebase",
+            "get_file_context - Get file details",
+            "find_related - Find related files",
+            "search_by_type - Filter by file type",
+            "get_stats - Knowledge base statistics",
+            "analyze_dependencies - Dependency graph"
+        ],
+        "usage": "Connect via Claude Desktop using mcp-remote proxy"
     }
 
 
@@ -450,6 +454,7 @@ if __name__ == "__main__":
     logger.info("📡 Transport: Streamable HTTP")
     logger.info("🔌 MCP Endpoint: http://0.0.0.0:8000/mcp")
     logger.info("❤️  Health Check: http://0.0.0.0:8000/health")
+    logger.info("🎯 Purpose: DevOps guide for your infrastructure code")
     
     uvicorn.run(
         app,
