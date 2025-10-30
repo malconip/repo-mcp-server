@@ -6,8 +6,8 @@ Streamable HTTP transport for DigitalOcean App Platform
 
 import logging
 from typing import List, Dict, Any
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
+from contextlib import asynccontextmanager, AsyncExitStack
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 
@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 
 # ==================== FASTMCP SERVER ====================
 
-# Create FastMCP server
 mcp = FastMCP("emperion-knowledge-base")
-
 
 # ==================== MCP TOOLS ====================
 
@@ -46,24 +44,7 @@ def index_file(
     tags: List[str] = [],
     file_metadata: Dict[str, Any] = {}
 ) -> dict:
-    """
-    Index a single file's structured knowledge.
-    
-    Args:
-        path: Full path to the file
-        repo: Repository name
-        file_type: Type of file (bicep, csharp, python, etc.)
-        technology: Technology category (infrastructure-as-code, backend, etc.)
-        summary: Brief summary of the file purpose
-        content_hash: Hash of the content for change detection
-        key_elements: Important elements (resources, classes, functions)
-        dependencies: Files this one depends on
-        tags: Searchable tags
-        file_metadata: Extra metadata (line_count, complexity, etc)
-    
-    Returns:
-        dict: Status and indexed file path
-    """
+    """Index a single file's structured knowledge."""
     try:
         fk = FileKnowledge(
             path=path,
@@ -97,15 +78,7 @@ def index_file(
 
 @mcp.tool()
 def index_batch(files: List[Dict[str, Any]]) -> dict:
-    """
-    Index multiple files at once for efficient bulk operations.
-    
-    Args:
-        files: List of file objects with all required fields
-    
-    Returns:
-        dict: Success and failed counts
-    """
+    """Index multiple files."""
     try:
         file_objects = []
         for f in files:
@@ -142,20 +115,7 @@ def search_knowledge(
     repos: List[str] = None,
     tags: List[str] = None
 ) -> dict:
-    """
-    Search files using keyword/semantic search across summaries, tags, and key elements.
-    
-    Args:
-        query: Search query string
-        limit: Maximum number of results (1-100)
-        file_types: Filter by file types (optional)
-        technologies: Filter by technology categories (optional)
-        repos: Filter by repository names (optional)
-        tags: Filter by tags (optional)
-    
-    Returns:
-        dict: Search results with path, repo, and summary
-    """
+    """Search files."""
     try:
         search_query = SearchQuery(
             query=query,
@@ -190,15 +150,7 @@ def search_knowledge(
 
 @mcp.tool()
 def get_file_context(path: str) -> dict:
-    """
-    Get complete context for a specific file including all metadata.
-    
-    Args:
-        path: Full path to the file
-    
-    Returns:
-        dict: Complete file information or error
-    """
+    """Get file context."""
     try:
         result = db.get_file_context(path)
         
@@ -229,16 +181,7 @@ def get_file_context(path: str) -> dict:
 
 @mcp.tool()
 def find_related(path: str, limit: int = 10) -> dict:
-    """
-    Find files related to a given file based on repo, technology, and tags.
-    
-    Args:
-        path: Full path to the source file
-        limit: Maximum number of related files (1-50)
-    
-    Returns:
-        dict: List of related files with paths and summaries
-    """
+    """Find related files."""
     try:
         results = db.find_related(path, min(limit, 50))
         formatted = [
@@ -262,22 +205,8 @@ def find_related(path: str, limit: int = 10) -> dict:
 
 
 @mcp.tool()
-def search_by_type(
-    file_type: str,
-    repo: str = None,
-    limit: int = 50
-) -> dict:
-    """
-    Get all files of a specific type, optionally filtered by repository.
-    
-    Args:
-        file_type: Type of file (bicep, csharp, python, yaml, etc.)
-        repo: Repository name (optional)
-        limit: Maximum number of results (1-100)
-    
-    Returns:
-        dict: List of files matching the type
-    """
+def search_by_type(file_type: str, repo: str = None, limit: int = 50) -> dict:
+    """Search by file type."""
     try:
         results = db.search_by_type(file_type, repo, min(limit, 100))
         formatted = [
@@ -302,12 +231,7 @@ def search_by_type(
 
 @mcp.tool()
 def get_stats() -> dict:
-    """
-    Get knowledge base statistics including totals by type, repo, and technology.
-    
-    Returns:
-        dict: Comprehensive statistics about the indexed knowledge
-    """
+    """Get statistics."""
     try:
         stats = db.get_stats()
         result = {
@@ -329,15 +253,7 @@ def get_stats() -> dict:
 
 @mcp.tool()
 def analyze_dependencies(path: str) -> dict:
-    """
-    Analyze dependency graph for a file showing what it depends on and what depends on it.
-    
-    Args:
-        path: Full path to the file
-    
-    Returns:
-        dict: Dependency graph with dependencies and dependents
-    """
+    """Analyze dependencies."""
     try:
         deps = db.analyze_dependencies(path)
         result = {
@@ -360,51 +276,65 @@ def analyze_dependencies(path: str) -> dict:
         return {"error": str(e), "path": path}
 
 
-# ==================== FASTAPI APP ====================
+# ==================== COMBINED LIFESPAN ====================
+
+# Get the mcp http app BEFORE creating FastAPI app
+mcp_http_app = mcp.http_app()
 
 @asynccontextmanager
-async def app_lifespan(app: FastAPI):
-    """Initialize database on startup"""
+async def combined_lifespan(app: FastAPI):
+    """Combined lifespan that initializes both FastAPI and FastMCP"""
     logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
     logger.info("📍 Deployment: DigitalOcean App Platform")
-    logger.info("🔌 MCP mounted at: / (root)")
-    try:
-        db.init_db()
-        logger.info("✅ Database initialized")
+    logger.info("🔌 FastMCP mounted at: /mcp")
+    
+    # Use AsyncExitStack to manage both lifespans
+    async with AsyncExitStack() as stack:
+        # Initialize our database
+        try:
+            db.init_db()
+            logger.info("✅ Database initialized")
+            
+            if config.validate():
+                logger.info("✅ Configuration validated")
+            else:
+                logger.warning("⚠️  Configuration has warnings")
+        except Exception as e:
+            logger.error(f"❌ Database initialization failed: {e}")
+            raise
         
-        if config.validate():
-            logger.info("✅ Configuration validated")
-        else:
-            logger.warning("⚠️  Configuration has warnings")
+        # CRITICAL: Enter FastMCP's lifespan context
+        if hasattr(mcp_http_app, 'lifespan'):
+            await stack.enter_async_context(mcp_http_app.lifespan(app))
+            logger.info("✅ FastMCP lifespan initialized")
         
         logger.info("✅ MCP Server ready on Streamable HTTP")
+        
         yield
         
         logger.info("👋 Shutting down...")
-    except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
-        raise
 
-# Create FastAPI app
+
+# ==================== FASTAPI APP ====================
+
 app = FastAPI(
     title="Emperion Knowledge Base",
     description="AI-powered code intelligence MCP server",
-    version="2.0.1",
-    lifespan=app_lifespan
+    version="2.0.4",
+    lifespan=combined_lifespan  # Use combined lifespan!
 )
 
+# Health check
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for DigitalOcean monitoring"""
+    """Health check for DigitalOcean"""
     try:
         stats = db.get_stats()
         return JSONResponse({
             "status": "healthy",
             "server": "emperion-knowledge-base",
-            "version": "2.0.1",
-            "transport": "streamable-http",
-            "deployment": "digitalocean",
-            "mcp_endpoint": "/ (root)",
+            "version": "2.0.4",
+            "mcp_endpoint": "/mcp",
             "total_files": stats.total_files,
             "database": "connected"
         })
@@ -415,21 +345,31 @@ async def health_check():
             "error": str(e)
         }, status_code=500)
 
-# ==================== MOUNT MCP AT ROOT ====================
-app.mount("/", mcp.http_app())
+# Root info
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "name": "Emperion Knowledge Base",
+        "version": "2.0.4",
+        "status": "online",
+        "mcp_endpoint": "/mcp (Streamable HTTP)",
+        "health_endpoint": "/health",
+        "tools": 8,
+        "documentation": "/docs"
+    }
 
+# Mount FastMCP at /mcp
+app.mount("/mcp", mcp_http_app)
 
-# ==================== MAIN ====================
 
 if __name__ == "__main__":
     import uvicorn
     
-    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
+    logger.info("🚀 Starting with uvicorn...")
     logger.info("📡 Transport: Streamable HTTP")
-    logger.info("📍 Deployment: DigitalOcean App Platform")
-    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8080/ (ROOT)")
+    logger.info("🔌 MCP Endpoint: http://0.0.0.0:8080/mcp")
     logger.info("❤️  Health Check: http://0.0.0.0:8080/health")
-    logger.info("🎯 Purpose: DevOps guide for your infrastructure code")
     
     uvicorn.run(
         app,
