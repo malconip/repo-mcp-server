@@ -5,9 +5,13 @@ Streamable HTTP transport for DigitalOcean App Platform
 """
 
 import logging
+import os
 from typing import List, Dict, Any
 from contextlib import asynccontextmanager
-from fastapi.responses import JSONResponse
+
+from fastapi import FastAPI
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from fastmcp import FastMCP
 
 from database import db
@@ -24,9 +28,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ==================== FASTMCP AS PRIMARY APP ====================
+# ==================== FASTMCP SERVER ====================
 
-mcp = FastMCP("emperion-knowledge-base")
+mcp = FastMCP(
+    name="emperion-knowledge-base",
+    description="AI-powered code intelligence MCP server"
+)
 
 # ==================== MCP TOOLS ====================
 
@@ -275,42 +282,10 @@ def analyze_dependencies(path: str) -> dict:
         return {"error": str(e), "path": path}
 
 
-# ==================== DATABASE INITIALIZATION ====================
+# ==================== CUSTOM ROUTES ====================
 
-@asynccontextmanager
-async def lifespan_wrapper(app):
-    """Initialize database on startup"""
-    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
-    logger.info("📍 Deployment: DigitalOcean App Platform")
-    logger.info("🔌 MCP Protocol: Streamable HTTP")
-    
-    try:
-        db.init_db()
-        logger.info("✅ Database initialized")
-        
-        if config.validate():
-            logger.info("✅ Configuration validated")
-        else:
-            logger.warning("⚠️  Configuration has warnings")
-    except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        raise
-    
-    logger.info("✅ MCP Server ready on Streamable HTTP")
-    
-    yield
-    
-    logger.info("👋 Shutting down...")
-
-
-# ==================== GET THE APP ====================
-
-# Get the FastAPI app from FastMCP (this has MCP routes built-in)
-app = mcp.get_fastapi_app(lifespan=lifespan_wrapper)
-
-# Add custom routes to the existing app
-@app.get("/health")
-async def health_check():
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request):
     """Health check for DigitalOcean"""
     try:
         stats = db.get_stats()
@@ -330,6 +305,49 @@ async def health_check():
         }, status_code=500)
 
 
+# ==================== APP SETUP ====================
+
+# Get the ASGI app from FastMCP (Starlette, not FastAPI)
+mcp_app = mcp.http_app(path='/mcp')
+
+# Create FastAPI app with proper lifespan management
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    """Initialize database on startup"""
+    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
+    logger.info("📍 Deployment: DigitalOcean App Platform")
+    logger.info("🔌 MCP Protocol: Streamable HTTP")
+    
+    try:
+        db.init_db()
+        logger.info("✅ Database initialized")
+        
+        if config.validate():
+            logger.info("✅ Configuration validated")
+        else:
+            logger.warning("⚠️  Configuration has warnings")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        raise
+    
+    # Enter FastMCP's lifespan context (CRITICAL!)
+    async with mcp_app.lifespan(app):
+        logger.info("✅ FastMCP lifespan initialized")
+        logger.info("✅ MCP Server ready on Streamable HTTP")
+        yield
+    
+    logger.info("👋 Shutting down...")
+
+
+# Create FastAPI app with combined lifespan
+app = FastAPI(
+    title="Emperion Knowledge Base",
+    description="AI-powered code intelligence MCP server",
+    version="2.0.5",
+    lifespan=app_lifespan
+)
+
+# Add root endpoint
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -338,23 +356,31 @@ async def root():
         "version": "2.0.5",
         "status": "online",
         "protocol": "MCP Streamable HTTP",
+        "mcp_endpoint": "/mcp/",
         "health_endpoint": "/health",
         "tools": 8,
-        "note": "MCP endpoints are handled by FastMCP automatically"
+        "note": "MCP server using FastMCP with Streamable HTTP transport"
     }
+
+
+# Mount FastMCP app at root (MCP endpoints will be at /mcp/)
+app.mount("/", mcp_app)
 
 
 if __name__ == "__main__":
     import uvicorn
     
+    port = int(os.getenv("PORT", 8080))
+    
     logger.info("🚀 Starting with uvicorn...")
     logger.info("📡 Transport: Streamable HTTP")
-    logger.info("🌐 Server: http://0.0.0.0:8080")
-    logger.info("❤️  Health: http://0.0.0.0:8080/health")
+    logger.info(f"🌐 Server: http://0.0.0.0:{port}")
+    logger.info(f"🔌 MCP Endpoint: http://0.0.0.0:{port}/mcp/")
+    logger.info(f"❤️  Health Check: http://0.0.0.0:{port}/health")
     
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8080,
+        port=port,
         log_level="info"
     )
