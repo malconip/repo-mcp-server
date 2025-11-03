@@ -1,5 +1,5 @@
 """
-Data models for Emperion Knowledge Base
+Data models for Repository Knowledge Base
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -43,8 +43,8 @@ class FileKnowledge(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "path": "/emperion/azure-iac/main.bicep",
-                "repo": "azure-iac",
+                "path": "/your-repos/infrastructure/main.bicep",
+                "repo": "infrastructure",
                 "file_type": "bicep",
                 "technology": "infrastructure-as-code",
                 "summary": "Main infrastructure definition for Azure resources",
@@ -54,8 +54,8 @@ class FileKnowledge(BaseModel):
                     "keyVault"
                 ],
                 "dependencies": [
-                    "/emperion/azure-iac/modules/storage.bicep",
-                    "/emperion/azure-iac/modules/keyvault.bicep"
+                    "/your-repos/infrastructure/modules/storage.bicep",
+                    "/your-repos/infrastructure/modules/keyvault.bicep"
                 ],
                 "dependents": [],
                 "tags": ["azure", "infrastructure", "production"],
@@ -113,8 +113,8 @@ class BatchIndexRequest(BaseModel):
             "example": {
                 "files": [
                     {
-                        "path": "/emperion/azure-iac/main.bicep",
-                        "repo": "azure-iac",
+                        "path": "/your-repos/infrastructure/main.bicep",
+                        "repo": "infrastructure",
                         "file_type": "bicep",
                         "technology": "infrastructure-as-code",
                         "summary": "Main infrastructure",
@@ -142,7 +142,7 @@ class SearchQuery(BaseModel):
                 "query": "azure storage configuration",
                 "file_types": ["bicep"],
                 "technologies": ["infrastructure-as-code"],
-                "repos": ["azure-iac"],
+                "repos": ["infrastructure"],
                 "tags": ["production"],
                 "limit": 10
             }
@@ -173,13 +173,13 @@ class DependencyGraph(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "root": "/emperion/IntakeAPI/Services/AuthService.cs",
+                "root": "/your-repos/backend-api/Services/AuthService.cs",
                 "dependencies": [
-                    "/emperion/IntakeAPI/Models/User.cs",
-                    "/emperion/IntakeAPI/Interfaces/IAuthService.cs"
+                    "/your-repos/backend-api/Models/User.cs",
+                    "/your-repos/backend-api/Interfaces/IAuthService.cs"
                 ],
                 "dependents": [
-                    "/emperion/IntakeAPI/Controllers/AuthController.cs"
+                    "/your-repos/backend-api/Controllers/AuthController.cs"
                 ],
                 "depth": 2
             }

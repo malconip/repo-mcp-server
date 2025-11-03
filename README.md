@@ -1,4 +1,4 @@
-# 🧠 Emperion Knowledge Base - Remote MCP Server
+# 🧠 Repository Knowledge Base - Remote MCP Server
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-2.10+-green.svg)](https://github.com/jlowin/fastmcp)
@@ -32,13 +32,13 @@ A **remote MCP server** that:
          ▼
 ┌─────────────────────────────────────────────┐
 │     DigitalOcean App Platform ($5/mo)       │
-│  ┌─────────────────────────────────────┐  │
-│  │  Emperion Knowledge Base (FastMCP)   │  │
-│  │  • Streamable HTTP on /mcp           │  │
-│  │  • Stateless deployment              │  │
-│  │  • 8 powerful tools                  │  │
-│  └──────────────┬──────────────────────┘  │
-└─────────────────┼────────────────────────────┘
+│  ┌─────────────────────────────────────┐    │
+│  │  Repository Knowledge Base (FastMCP)│    │
+│  │  • Streamable HTTP on /mcp          │    │
+│  │  • Stateless deployment             │    │
+│  │  • 8 powerful tools                 │    │
+│  └──────────────┬──────────────────────┘    │
+└─────────────────┼───────────────────────────┘
                   │
 ┌─────────────────▼────────────────────────┐
 │     Supabase PostgreSQL (FREE!)          │
@@ -105,8 +105,8 @@ A **remote MCP server** that:
 ### 1. Clone & Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/emperion-knowledge-base.git
-cd emperion-knowledge-base
+git clone https://github.com/YOUR_USERNAME/repository-knowledge-base.git
+cd repository-knowledge-base
 
 # Copy environment template
 cp .env.example .env
@@ -162,10 +162,10 @@ Edit: `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "/path/to/your/emperion/repos"
+        "/path/to/your/repository/repos"
       ]
     },
-    "emperion-knowledge": {
+    "repository-knowledge": {
       "command": "npx",
       "args": [
         "-y",
@@ -188,8 +188,8 @@ Look for the 🔨 hammer icon to confirm your server is connected!
 ### Indexing Files
 
 ```
-Hey Claude, use the filesystem MCP to read /emperion/azure-iac/main.bicep 
-and index it in the emperion-knowledge server.
+Hey Claude, use the filesystem MCP to read /repository/azure-iac/main.bicep 
+and index it in the repository-knowledge server.
 ```
 
 Claude will:
@@ -200,7 +200,7 @@ Claude will:
 ### Searching Knowledge
 
 ```
-Search the emperion-knowledge for "Azure storage configuration"
+Search the repository-knowledge for "Azure storage configuration"
 ```
 
 Returns:
@@ -212,7 +212,7 @@ Returns:
 ### Analyzing Dependencies
 
 ```
-Analyze dependencies for /emperion/IntakeAPI/Services/AuthService.cs
+Analyze dependencies for /repository/IntakeAPI/Services/AuthService.cs
 ```
 
 Returns:
@@ -223,7 +223,7 @@ Returns:
 ### Getting Statistics
 
 ```
-Get stats from emperion-knowledge
+Get stats from repository-knowledge
 ```
 
 Returns:
@@ -238,7 +238,7 @@ Returns:
 ## 🗂️ Project Structure
 
 ```
-emperion-knowledge-base/
+repository-knowledge-base/
 ├── main.py                    # FastMCP server with Streamable HTTP
 ├── database.py                # SQLAlchemy database layer
 ├── models.py                  # Pydantic models
@@ -486,8 +486,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📞 Support
 
-- 🐛 Issues: [GitHub Issues](https://github.com/YOUR_USERNAME/emperion-knowledge-base/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/YOUR_USERNAME/emperion-knowledge-base/discussions)
+- 🐛 Issues: [GitHub Issues](https://github.com/YOUR_USERNAME/repository-knowledge-base/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/YOUR_USERNAME/repository-knowledge-base/discussions)
 
 ---
 

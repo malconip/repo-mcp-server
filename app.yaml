@@ -1,4 +1,4 @@
-name: emperion-knowledge-base
+name: repository-knowledge-base
 region: nyc  # Change to match your Supabase region for lower latency
 
 services:

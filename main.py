@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Emperion Knowledge Base - Remote MCP Server with FastMCP
+Repository Knowledge Base - Remote MCP Server with FastMCP
 Streamable HTTP transport for DigitalOcean App Platform
 """
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # ==================== FASTMCP SERVER ====================
 
-mcp = FastMCP("emperion-knowledge-base")
+mcp = FastMCP("repository-knowledge-base")
 
 # ==================== MCP TOOLS ====================
 
@@ -288,7 +288,7 @@ async def health_check(request: Request):
         stats = db.get_stats()
         return JSONResponse({
             "status": "healthy",
-            "server": "emperion-knowledge-base",
+            "server": "repository-knowledge-base",
             "version": "2.0.5",
             "protocol": "MCP Streamable HTTP",
             "total_files": stats.total_files,
@@ -311,7 +311,7 @@ mcp_app = mcp.http_app(path='/mcp')
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     """Initialize database on startup"""
-    logger.info("🚀 Starting Emperion Knowledge Base MCP Server...")
+    logger.info("🚀 Starting Repository Knowledge Base MCP Server...")
     logger.info("📍 Deployment: DigitalOcean App Platform")
     logger.info("🔌 MCP Protocol: Streamable HTTP")
     
@@ -338,7 +338,7 @@ async def app_lifespan(app: FastAPI):
 
 # Create FastAPI app with combined lifespan
 app = FastAPI(
-    title="Emperion Knowledge Base",
+    title="Repository Knowledge Base",
     description="AI-powered code intelligence MCP server",
     version="2.0.5",
     lifespan=app_lifespan
@@ -349,7 +349,7 @@ app = FastAPI(
 async def root():
     """Root endpoint"""
     return {
-        "name": "Emperion Knowledge Base",
+        "name": "Repository Knowledge Base",
         "version": "2.0.5",
         "status": "online",
         "protocol": "MCP Streamable HTTP",

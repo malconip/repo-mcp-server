@@ -1,5 +1,5 @@
 """
-Configuration for Emperion Knowledge Base MCP Server
+Configuration for Repository Knowledge Base MCP Server
 """
 import os
 from typing import Optional
@@ -14,7 +14,7 @@ class Config:
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql://n8n:n8n_secure_password_change_me@localhost:5432/emperion_knowledge_base"
+        "postgresql://user:password@localhost:5432/repo_knowledge_base"
     )
     
     # Security
@@ -32,16 +32,16 @@ class Config:
         "md", "env", "Dockerfile"
     ]
     
-    # Emperion specific paths (para referência)
-    EMPERION_REPOS: dict[str, str] = {
-        "azure-iac": "/emperion/azure-iac",
-        "IntakeAPI": "/emperion/IntakeAPI",
-        "WebPortals": "/emperion/WebPortals",
-        "DevOps": "/emperion/DevOps",
-        "AutomatedTests": "/emperion/AutomatedTests",
-        "pipelines-templates": "/emperion/pipelines-templates",
-        "devops-scripts": "/emperion/devops-scripts",
-        "notes": "/emperion/notes",
+    # Example repository paths (customize for your setup)
+    EXAMPLE_REPOS: dict[str, str] = {
+        "infrastructure": "/your-repos/infrastructure",
+        "backend-api": "/your-repos/backend-api",
+        "frontend-app": "/your-repos/frontend-app",
+        "devops": "/your-repos/devops",
+        "tests": "/your-repos/tests",
+        "pipelines": "/your-repos/pipelines",
+        "scripts": "/your-repos/scripts",
+        "docs": "/your-repos/docs",
     }
     
     # Logging

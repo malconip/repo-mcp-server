@@ -1,5 +1,5 @@
 """
-Database layer for Emperion Knowledge Base
+Database layer for Repository Knowledge Base
 """
 import json
 from datetime import datetime
@@ -147,7 +147,7 @@ class DatabaseManager:
                 q = q.filter(FileIndex.repo.in_(query.repos))
             
             if query.tags:
-                # Filter by tags (at least one match)
+                # Filter by tags
                 tag_filter = text(
                     "EXISTS (SELECT 1 FROM json_array_elements_text(tags) tag WHERE tag = ANY(:tags))"
                 )
@@ -234,7 +234,7 @@ class DatabaseManager:
                 FileIndex.file_type,
                 text("COUNT(*) as count")
             ).group_by(FileIndex.file_type).all():
-                by_type[row.file_type] = row.count
+                by_type[row[0]] = row[1]
             
             # Files by repo
             by_repo = {}
@@ -242,7 +242,7 @@ class DatabaseManager:
                 FileIndex.repo,
                 text("COUNT(*) as count")
             ).group_by(FileIndex.repo).all():
-                by_repo[row.repo] = row.count
+                by_repo[row[0]] = row[1]
             
             # Files by technology
             by_tech = {}
@@ -250,14 +250,14 @@ class DatabaseManager:
                 FileIndex.technology,
                 text("COUNT(*) as count")
             ).group_by(FileIndex.technology).all():
-                by_tech[row.technology] = row.count
+                by_tech[row[0]] = row[1]
             
             # Last indexed
             last = session.query(FileIndex.indexed_at).order_by(
                 FileIndex.indexed_at.desc()
             ).first()
             
-            # Total dependencies (handle potential column issues gracefully)
+            # Total dependencies
             try:
                 total_deps = session.query(
                     text("SUM(json_array_length(dependencies)) as total")
