@@ -47,7 +47,7 @@ class DatabaseManager:
     """Manage database operations"""
     
     def __init__(self):
-        self.engine = create_engine(config.DATABASE_URL)
+        self.engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
         self.SessionLocal = sessionmaker(bind=self.engine)
         
     def init_db(self):
